@@ -1,0 +1,87 @@
+# Python style rules (PEP 8, lightweight)
+
+[style]
+indent_size = 4
+max_line_length = 88
+quote_style = double
+trailing_commas = true
+spaces_around_operators = true
+spaces_after_commas = true
+blank_lines_around_functions = 2
+blank_lines_around_classes = 2
+
+[naming]
+functions = snake_case
+variables = snake_case
+classes = PascalCase
+constants = UPPER_CASE
+
+[imports]
+sort = true
+group_standard_library_first = true
+group_third_party_second = true
+group_local_last = true
+
+[docstrings]
+require = false
+style = google
+
+[errors]
+allow_unused_variables = true
+allow_print_statements = true
+allow_todo_comments = true
+
+[collaboration]
+# Always prompt for clarity before making assumptions when coding.
+# If something is ambiguous (requirements, data types, business logic),
+# ask the developer first instead of guessing.
+
+[fastapi_openapi]
+# Guidelines to make OpenAPI generation clean and automatic
+
+# Always define request and response models using Pydantic (BaseModel).
+use_pydantic_models = true
+
+# Always add type hints for function parameters and return values.
+require_type_hints = true
+
+# Prefer async endpoints (async def) for better performance and consistency.
+prefer_async_endpoints = true
+
+# Each endpoint should include a short description (docstring or FastAPI 'description' param).
+require_endpoint_description = true
+
+# Use descriptive, lowercase names for routes (e.g. /users/{user_id}, not /getUser).
+endpoint_naming = descriptive_snake_case
+
+# Group related endpoints into routers (e.g., users.py, items.py) for clarity.
+use_routers = true
+
+# Response models should be explicitly defined when possible for better OpenAPI output.
+explicit_response_models = true
+
+[folders]
+# Folder structure conventions
+
+# GitHub configs and workflows must live under .github/
+.github = "GitHub Actions, workflows, issue/PR templates only"
+
+# Terraform code must live under terraform/
+terraform = "Infrastructure as code, .tf files, modules, variables"
+
+# Application code must live under app/
+app = "FastAPI app source code, Poetry config, and dependencies"
+
+# Within app/, organize code as follows:
+app/pyproject.toml = "Poetry configuration and dependencies"
+app/poetry.lock = "Poetry lock file for reproducible builds"
+app/run.py = "Development script to run the FastAPI application"
+app/src/chatty/ = "Main package source code"
+app/src/chatty/main.py = "App entrypoint"
+app/src/chatty/routers/ = "FastAPI routers for endpoints"
+app/src/chatty/models/ = "Database models"
+app/src/chatty/schemas/ = "Pydantic schemas for requests/responses"
+app/src/chatty/core/ = "Core config, settings, utilities"
+app/tests/ = "Test files for the application"
+
+# Do not place code outside these directories unless explicitly documented.
