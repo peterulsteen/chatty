@@ -111,6 +111,24 @@ All fixed as part of this task.
 
 ---
 
+## GitHub Actions CI
+
+### pre-commit as the single CI gate
+CI runs `uv --project app run pre-commit run --all-files` as the sole lint/format/typecheck
+step. No separate ruff or pyright steps — pre-commit owns those entirely, eliminating
+any drift between local and CI check definitions.
+
+### uv cache via actions/cache
+The uv cache directory (from `setup-uv` outputs) is cached keyed on `app/uv.lock`.
+This avoids re-downloading packages on every run while ensuring the cache is invalidated
+when dependencies change.
+
+### Fail-fast ordering
+pre-commit runs before pytest. Fast feedback on style/type issues without waiting for
+the test suite.
+
+---
+
 ## AI Use
 
 This project uses Claude Code (claude-sonnet-4-6) as a pair-programming assistant

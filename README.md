@@ -1,4 +1,7 @@
 # chatty
+
+[![CI](https://github.com/peterulsteen/chatty/actions/workflows/ci.yml/badge.svg)](https://github.com/peterulsteen/chatty/actions/workflows/ci.yml)
+
 Chatty Backend experimentation
 
 # Local Setup
