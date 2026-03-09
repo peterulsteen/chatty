@@ -4,7 +4,8 @@
 
 Chatty Backend experimentation
 
-# Local Setup
+## Local Setup
+
 ```bash
 # Requires Python 3.11+ and uv (https://docs.astral.sh/uv/getting-started/installation/)
 cd app
@@ -20,7 +21,8 @@ uv run python run.py
 # http://localhost:8000/docs
 ```
 
-# Testing
+## Testing
+
 ```bash
 # Unit tests (from app directory)
 cd app
@@ -33,7 +35,8 @@ uv run pytest tests_smoke/smoke_test.py
 uv run pytest tests_smoke/smoke_socketio.py
 ```
 
-# To Do / To Discuss:
+## To Do / To Discuss
+
 - dockerize
 - basic github actions
 - OpenAPI spec generation
