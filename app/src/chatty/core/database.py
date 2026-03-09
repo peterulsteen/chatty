@@ -9,8 +9,9 @@ from typing import Generator
 from sqlalchemy import Column, DateTime, String, create_engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
-# SQLite database URL for temporary database
-SQLALCHEMY_DATABASE_URL = "sqlite:///./chatty.db"
+from chatty.config import settings
+
+SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 
 # Create SQLAlchemy engine
 engine = create_engine(

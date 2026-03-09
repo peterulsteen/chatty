@@ -17,6 +17,7 @@ classifiers = [
 dependencies = [
   "fastapi>=0.115,<1",
   "pydantic>=2.10,<3",
+  "pydantic-settings>=2.3,<3",
   "python-socketio>=5.10,<6",
   "sqlalchemy>=2,<3",
   "structlog>=24,<26",

@@ -7,7 +7,7 @@ Living document. Check off on merge to main. Never delete entries.
 - [x] Bump FastAPI to current version; replace deprecated `@app.on_event` with `lifespan`
 - [x] pre-commit hooks (ruff, pyright, deptry, pyproject-fmt, uv-lock, hygiene)
 - [x] GitHub Actions CI (pre-commit run --all-files as single source of truth)
-- [ ] Config / env var management (pydantic-settings + .env.example)
+- [x] Config / env var management (pydantic-settings + .env.example)
 - [ ] CORS (CORSMiddleware + SocketIO cors_allowed_origins, env-driven)
 - [ ] /ready readiness endpoint (do not touch existing /health/)
 - [ ] Add request_id to existing logging middleware

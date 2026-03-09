@@ -46,8 +46,9 @@ def configure_logging() -> None:
 
 def _is_production() -> bool:
     """Check if running in production environment."""
-    # You can modify this to check environment variables or other indicators
-    return False
+    from chatty.config import settings
+
+    return settings.APP_ENV == "production"
 
 
 def get_logger(name: str) -> structlog.BoundLogger:

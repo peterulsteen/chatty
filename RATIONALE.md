@@ -129,6 +129,28 @@ the test suite.
 
 ---
 
+## Config / env var management
+
+### 12-factor App configuration
+All application configuration is injected via environment variables, following
+[12-factor App](https://12factor.net/config) principle III. No config values are
+hardcoded in source. `pydantic-settings` reads from the environment (with `.env`
+file fallback for local dev), validates types, and exposes a singleton `settings`
+object imported wherever config is needed. `.env.example` is the public contract
+for required variables — `.env` is gitignored.
+
+### Singleton settings object
+`config.py` exports `settings = Settings()` at module level. This is imported
+directly rather than passed as a dependency, since these are process-level constants
+that don't vary per-request. Avoids threading concerns and keeps callsites clean.
+
+### APP_ENV drives logging verbosity
+`_is_production()` in `logging.py` now delegates to `settings.APP_ENV == "production"`
+rather than hardcoding `False`. DEBUG logging in development, INFO in production —
+no code changes required to switch environments.
+
+---
+
 ## AI Use
 
 This project uses Claude Code (claude-sonnet-4-6) as a pair-programming assistant
