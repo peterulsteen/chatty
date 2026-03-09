@@ -1,6 +1,7 @@
 """
 Logging configuration and utilities.
 """
+
 import logging
 import sys
 from typing import Any, Dict
@@ -20,7 +21,7 @@ def configure_logging() -> None:
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             structlog.processors.UnicodeDecoder(),
-            structlog.processors.JSONRenderer()
+            structlog.processors.JSONRenderer(),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(
             logging.INFO if _is_production() else logging.DEBUG
@@ -28,14 +29,14 @@ def configure_logging() -> None:
         logger_factory=LoggerFactory(),
         cache_logger_on_first_use=True,
     )
-    
+
     # Configure standard library logging
     logging.basicConfig(
         format="%(message)s",
         stream=sys.stdout,
         level=logging.INFO if _is_production() else logging.DEBUG,
     )
-    
+
     # Set specific logger levels
     logging.getLogger("uvicorn.access").setLevel(
         logging.INFO if _is_production() else logging.DEBUG
@@ -111,11 +112,11 @@ def log_error(
         "error_message": error_message,
         "client_ip": client_ip,
     }
-    
+
     if exception:
         log_data["exception_type"] = type(exception).__name__
         log_data["exception"] = str(exception)
-    
+
     logger.error("Request error occurred", **log_data)
 
 
@@ -127,12 +128,12 @@ def _sanitize_headers(headers: Dict[str, str]) -> Dict[str, str]:
         "x-api-key",
         "x-auth-token",
     }
-    
+
     sanitized = {}
     for key, value in headers.items():
         if key.lower() in sensitive_headers:
             sanitized[key] = "[REDACTED]"
         else:
             sanitized[key] = value
-    
+
     return sanitized

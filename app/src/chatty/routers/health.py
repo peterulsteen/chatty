@@ -1,6 +1,7 @@
 """
 Health check endpoints.
 """
+
 from datetime import UTC, datetime
 
 from fastapi import APIRouter
@@ -11,6 +12,7 @@ router = APIRouter()
 
 class HealthResponse(BaseModel):
     """Health check response model."""
+
     status: str
     timestamp: datetime
     version: str
@@ -20,7 +22,7 @@ class HealthResponse(BaseModel):
 async def health_check() -> HealthResponse:
     """
     Health check endpoint.
-    
+
     Returns the current health status of the application.
     """
     return HealthResponse(

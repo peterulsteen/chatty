@@ -1,6 +1,7 @@
 """
 Database configuration and session management.
 """
+
 import uuid
 from datetime import UTC, datetime
 from typing import Generator
@@ -14,7 +15,7 @@ SQLALCHEMY_DATABASE_URL = "sqlite:///./chatty.db"
 # Create SQLAlchemy engine
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False}  # Needed for SQLite
+    connect_args={"check_same_thread": False},  # Needed for SQLite
 )
 
 # Create SessionLocal class
@@ -27,22 +28,23 @@ Base = declarative_base()
 # TODO - Probs best to move to models folder
 class BaseModel(Base):
     """Base model with common fields."""
+
     __abstract__ = True
-    
-    id = Column(String(36), primary_key=True,  default=lambda: str(uuid.uuid4()))
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     created_date = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     last_updated_date = Column(
-        DateTime, 
-        default=lambda: datetime.now(UTC), 
-        onupdate=lambda: datetime.now(UTC), 
-        nullable=False
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
     )
 
 
 def get_db() -> Generator[Session, None, None]:
     """
     Dependency to get database session.
-    
+
     Yields:
         Session: SQLAlchemy database session
     """

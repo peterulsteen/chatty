@@ -1,6 +1,7 @@
 """
 User Pydantic schemas for API requests and responses.
 """
+
 import re
 from datetime import datetime
 from typing import List
@@ -37,12 +38,14 @@ class UserCreateRequest(BaseModel):
 class UserUpdateRequest(BaseModel):
     """Request schema for updating a user."""
 
-    name: str = Field(None, min_length=1, max_length=255, description="User's display name")
-    handle: str = Field(None, min_length=1, max_length=50, description="User's unique handle")
+    name: str | None = Field(None, min_length=1, max_length=255, description="User's display name")
+    handle: str | None = Field(
+        None, min_length=1, max_length=50, description="User's unique handle"
+    )
 
     @field_validator("name")
     @classmethod
-    def validate_name(cls, v: str) -> str:
+    def validate_name(cls, v: str | None) -> str | None:
         """Validate name field."""
         if v is not None and (not v or not v.strip()):
             raise ValueError("Name cannot be empty")
@@ -50,7 +53,7 @@ class UserUpdateRequest(BaseModel):
 
     @field_validator("handle")
     @classmethod
-    def validate_handle(cls, v: str) -> str:
+    def validate_handle(cls, v: str | None) -> str | None:
         """Validate handle field."""
         if v is not None:
             if not v or not v.strip():
