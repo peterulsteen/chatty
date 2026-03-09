@@ -186,11 +186,14 @@ liveness probe (is the process alive?); `/ready` is a readiness probe (is the AP
 ready to serve traffic?). Keeping them on the same router avoids router proliferation
 while maintaining the semantic distinction.
 
-### ReadyResponse shape
+### ReadyResponse shape and DB check
 
-Returns `{"status": "ok", "checks": {"api": "ok"}}`. The `checks` dict is a
-`dict[str, str]` — extensible to future dependency checks (database, cache, etc.)
-without a schema change.
+Returns `{"status": "ok", "checks": {"api": "ok", "db": "ok"}}`. The `checks` dict
+is a `dict[str, str]` — extensible to future dependency checks without a schema
+change. If any check fails the top-level status is `"degraded"` and the endpoint
+returns HTTP 503, so orchestrators remove the instance from the load balancer without
+restarting it. The DB check issues a `SELECT 1` via `SessionLocal` — cheap enough for
+a 10s probe interval and sufficient to detect a broken connection.
 
 ---
 
