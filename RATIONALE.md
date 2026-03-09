@@ -151,6 +151,22 @@ no code changes required to switch environments.
 
 ---
 
+## CORS
+
+### Dual CORS configuration
+FastAPI's `CORSMiddleware` handles HTTP request CORS (see [FastAPI CORS docs](https://fastapi.tiangolo.com/tutorial/cors/#use-corsmiddleware)).
+SocketIO handles WebSocket upgrade CORS independently via its own `cors_allowed_origins`
+parameter — FastAPI middleware does not intercept the WebSocket handshake. Both are
+wired to `settings.CORS_ORIGINS` so there is a single source of truth and they cannot
+drift apart. A comment in `main.py` documents this coupling explicitly.
+
+### CORS_ORIGINS from environment
+`CORS_ORIGINS` is a `list[str]` in `Settings`, populated from the environment.
+In production, set `CORS_ORIGINS=["https://your-frontend.com"]`. Defaults to
+`["http://localhost:3000"]` for local development.
+
+---
+
 ## AI Use
 
 This project uses Claude Code (claude-sonnet-4-6) as a pair-programming assistant
