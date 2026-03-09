@@ -96,6 +96,7 @@ duplication between local and CI check definitions.
 - `uv-lock`: keeps `uv.lock` in sync automatically when `pyproject.toml` changes.
 - `deptry`: catches imports not declared as dependencies. Particularly relevant since `requests` was moved from prod to dev.
 - `pyright`: static type checking via uv-managed pyright, keeping it in sync with the dev environment.
+- `trailing-whitespace` + `end-of-file-fixer`: enforced once on first run, causing a bulk whitespace fix across the codebase. Cosmetic churn up front, but eliminates it permanently going forward — consistent enforcement keeps diffs meaningful.
 
 ### deptry suppressions
 
