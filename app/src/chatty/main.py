@@ -1,13 +1,20 @@
 """
 FastAPI application entrypoint.
 """
-from fastapi import FastAPI
 import socketio
+from fastapi import FastAPI
 
 from chatty.core.database import create_tables
 from chatty.core.logging import configure_logging, get_logger
 from chatty.core.middleware import ErrorLoggingMiddleware, LoggingMiddleware
-from chatty.routers import health, hello, users, chatrooms, messages, chatroom_participants
+from chatty.routers import (
+    chatroom_participants,
+    chatrooms,
+    health,
+    hello,
+    messages,
+    users,
+)
 
 # Configure logging
 configure_logging()
@@ -116,7 +123,9 @@ app.include_router(hello.router, prefix="/hello", tags=["hello"])
 app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(chatrooms.router, prefix="/chatrooms", tags=["chatrooms"])
 app.include_router(messages.router, prefix="/messages", tags=["messages"])
-app.include_router(chatroom_participants.router, prefix="/chatroom-participants", tags=["chatroom-participants"])
+app.include_router(
+    chatroom_participants.router, prefix="/chatroom-participants", tags=["chatroom-participants"]
+)
 
 # Set Socket.IO server in messages router for event emission
 messages.set_socketio_server(sio)

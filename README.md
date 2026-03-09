@@ -3,12 +3,12 @@ Chatty Backend experimentation
 
 # Local Setup
 ```bash
-# However you like to set Python 3.11 and poetry 2.2.0
+# Requires Python 3.11+ and uv (https://docs.astral.sh/uv/getting-started/installation/)
 cd app
-poetry install
+uv sync
 
 # To run the local server (from app directory)
-poetry run python run.py
+uv run python run.py
 
 # To see lovely docs in your browser:
 # http://localhost:8000/docs
@@ -16,15 +16,15 @@ poetry run python run.py
 
 # Testing
 ```bash
-# Unit tests
-cd app  # if needed  
-poetry run pytest -W ignore
+# Unit tests (from app directory)
+cd app
+uv run pytest -W ignore
 
-# Basic RestAPI smoke test with server running locally, from /app
-poetry run pytest .\tests_smoke\smoke_test.py
+# Basic RestAPI smoke test with server running locally
+uv run pytest tests_smoke/smoke_test.py
 
-# Basic SocketIO smoke test with server running locally, from /app
-poetry run pytest .\tests_smoke\smoke_socketio.py
+# Basic SocketIO smoke test with server running locally
+uv run pytest tests_smoke/smoke_socketio.py
 ```
 
 # To Do / To Discuss:

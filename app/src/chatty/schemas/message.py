@@ -13,7 +13,9 @@ class MessageCreateRequest(BaseModel):
     user_id: str = Field(..., description="ID of the user sending the message")
     chatroom_id: str = Field(..., description="ID of the chatroom where message is sent")
     is_reply: bool = Field(False, description="Whether this is a reply to another message")
-    parent_message_id: Optional[str] = Field(None, description="ID of parent message (required if is_reply=True)")
+    parent_message_id: Optional[str] = Field(
+        None, description="ID of parent message (required if is_reply=True)"
+    )
     
     @validator('message_text')
     def validate_message_text(cls, v):

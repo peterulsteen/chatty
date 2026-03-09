@@ -1,8 +1,7 @@
 """
 Message database model.
 """
-from sqlalchemy import Column, String, Boolean, ForeignKey, Index
-from sqlalchemy.orm import relationship
+from sqlalchemy import Boolean, Column, ForeignKey, Index, String
 
 from chatty.core.database import BaseModel
 
@@ -94,4 +93,7 @@ class Message(BaseModel):
     
     def __repr__(self) -> str:
         """String representation of Message."""
-        return f"<Message(id={self.id}, user_id='{self.user_id}', chatroom_id='{self.chatroom_id}', is_reply={self.is_reply})>"
+        return (
+            f"<Message(id={self.id}, user_id='{self.user_id}', "
+            f"chatroom_id='{self.chatroom_id}', is_reply={self.is_reply})>"
+        )

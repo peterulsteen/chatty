@@ -1,11 +1,10 @@
 """
 Chatroom management endpoints.
 """
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from chatty.core.database import get_db
 from chatty.models.chatroom import Chatroom
@@ -13,11 +12,11 @@ from chatty.models.chatroom_participant import ChatroomParticipant
 from chatty.models.user import User
 from chatty.schemas.chatroom import (
     ChatroomCreateRequest,
-    ChatroomUpdateRequest,
-    ChatroomResponse,
     ChatroomListResponse,
-    ChatroomUserResponse,
+    ChatroomResponse,
+    ChatroomUpdateRequest,
     ChatroomUserListResponse,
+    ChatroomUserResponse,
     DeleteResponse,
 )
 

@@ -1,22 +1,20 @@
 """
 Message management endpoints.
 """
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
 
 from chatty.core.database import get_db
 from chatty.core.logging import get_logger
+from chatty.models.chatroom import Chatroom
 from chatty.models.message import Message
 from chatty.models.user import User
-from chatty.models.chatroom import Chatroom
 from chatty.schemas.message import (
-    MessageCreateRequest,
-    MessageResponse,
-    MessageListResponse,
     DeleteResponse,
+    MessageCreateRequest,
+    MessageListResponse,
+    MessageResponse,
 )
 
 router = APIRouter()
@@ -99,8 +97,11 @@ async def create_message(
             try:
                 # Convert the response to dict for Socket.IO emission with JSON serialization
                 serialized_message = message_response.model_dump(mode='json')
-                await sio.emit('new_message', serialized_message, room=serialized_message['chatroom_id'])
-                logger.info(f"Emitted new_message event to chatroom {serialized_message['chatroom_id']}")
+                await sio.emit(
+                    "new_message", serialized_message, room=serialized_message["chatroom_id"]
+                )
+                chatroom_id = serialized_message["chatroom_id"]
+                logger.info(f"Emitted new_message event to chatroom {chatroom_id}")
             except Exception as e:
                 # TODO: Implement proper error handling for Socket.IO emission
                 logger.error(f"Error emitting new_message event: {e}")
