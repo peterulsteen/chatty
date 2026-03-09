@@ -7,7 +7,9 @@ from typing import AsyncGenerator
 
 import socketio
 from fastapi import FastAPI
+from starlette.middleware.cors import CORSMiddleware
 
+from chatty.config import settings
 from chatty.core.database import create_tables
 from chatty.core.logging import configure_logging, get_logger
 from chatty.core.middleware import ErrorLoggingMiddleware, LoggingMiddleware
@@ -25,8 +27,10 @@ configure_logging()
 logger = get_logger("main")
 
 # Create Socket.IO server
+# cors_allowed_origins must be kept in sync with the FastAPI CORSMiddleware policy below.
+# SocketIO handles WebSocket upgrade CORS independently from FastAPI middleware.
 sio = socketio.AsyncServer(
-    cors_allowed_origins="*",  # TODO: Configure CORS properly for production
+    cors_allowed_origins=settings.CORS_ORIGINS,
     async_mode="asgi",
 )
 
@@ -116,9 +120,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add logging middleware
+# Add middleware (order matters: last added = outermost)
 app.add_middleware(ErrorLoggingMiddleware)
 app.add_middleware(LoggingMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Create Socket.IO ASGI app
 socketio_app = socketio.ASGIApp(sio, app)
