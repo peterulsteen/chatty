@@ -1,6 +1,7 @@
 """
 Chatroom Pydantic schemas for API requests and responses.
 """
+
 import re
 from datetime import datetime
 from typing import List
@@ -28,11 +29,11 @@ class ChatroomCreateRequest(BaseModel):
 class ChatroomUpdateRequest(BaseModel):
     """Request schema for updating a chatroom."""
 
-    name: str = Field(None, min_length=1, max_length=100, description="Chatroom name")
+    name: str | None = Field(None, min_length=1, max_length=100, description="Chatroom name")
 
     @field_validator("name")
     @classmethod
-    def validate_name(cls, v: str) -> str:
+    def validate_name(cls, v: str | None) -> str | None:
         """Validate name field."""
         if v is not None:
             if not v or not v.strip():

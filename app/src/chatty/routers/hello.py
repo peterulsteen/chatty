@@ -10,12 +10,14 @@ router = APIRouter()
 
 class HelloResponse(BaseModel):
     """Hello response model."""
+
     message: str
     name: str
 
 
 class HelloRequest(BaseModel):
     """Hello request model."""
+
     name: str
 
 
@@ -23,11 +25,10 @@ class HelloRequest(BaseModel):
 async def hello_world() -> HelloResponse:
     """
     Hello world endpoint.
-    
+
     Returns a simple hello world message.
     """
     return HelloResponse(
         message="Hello, World!",
         name="World",
     )
-

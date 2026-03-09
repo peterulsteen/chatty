@@ -79,6 +79,38 @@ and returns a naive datetime; `now(UTC)` returns a timezone-aware datetime.
 
 ---
 
+## pre-commit hooks
+
+### Shift-left enforcement via pre-commit
+
+Linting, formatting, type checking, and import validation are enforced at commit time
+via pre-commit hooks, managed as a uv dev dependency. No manual installation required —
+`uv sync` installs it, `uv run pre-commit install` wires the git hooks. CI will run
+`uv run pre-commit run --all-files` as the single source of truth, eliminating
+duplication between local and CI check definitions.
+
+### Hook selection
+
+- `ruff` + `ruff-format`: single tool replaces flake8, isort, and black. `--fix` auto-corrects safe issues before commit.
+- `pyproject-fmt`: enforces consistent ordering and formatting in `pyproject.toml`, which reviewers will read carefully.
+- `uv-lock`: keeps `uv.lock` in sync automatically when `pyproject.toml` changes.
+- `deptry`: catches imports not declared as dependencies. Particularly relevant since `requests` was moved from prod to dev.
+- `pyright`: static type checking via uv-managed pyright, keeping it in sync with the dev environment.
+- `trailing-whitespace` + `end-of-file-fixer`: enforced once on first run, causing a bulk whitespace fix across the codebase. Cosmetic churn up front, but eliminates it permanently going forward — consistent enforcement keeps diffs meaningful.
+
+### deptry suppressions
+
+- `uvicorn` (DEP002): declared as production dep but invoked via CLI, not imported. Legitimate runtime dependency.
+- `starlette` (DEP003): imported directly in middleware but is a transitive dep of FastAPI. Intentional — FastAPI exposes starlette as a first-class surface.
+
+### Pyright fixes surfaced
+
+Pre-commit revealed real type bugs in the existing codebase: `Optional[str]` parameters
+typed as `str`, `request.client` nullable access, SQLAlchemy Column assignment.
+All fixed as part of this task.
+
+---
+
 ## AI Use
 
 This project uses Claude Code (claude-sonnet-4-6) as a pair-programming assistant

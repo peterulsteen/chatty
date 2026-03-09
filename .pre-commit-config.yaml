@@ -1,0 +1,48 @@
+repos:
+  # --- Core hygiene hooks ---
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+
+  # --- Ruff: lint + import sorting + formatting ---
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.5
+    hooks:
+      - id: ruff
+        args: [--fix]
+        types_or: [python]
+      - id: ruff-format
+        types_or: [python]
+
+  # --- Format pyproject.toml consistently ---
+  - repo: https://github.com/tox-dev/pyproject-fmt
+    rev: "v2.16.2"
+    hooks:
+      - id: pyproject-fmt
+
+  # --- Keep uv.lock in sync with pyproject.toml ---
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.10.9
+    hooks:
+      - id: uv-lock
+
+  # --- Local hooks: rely on uv-managed tools ---
+  - repo: local
+    hooks:
+      - id: deptry
+        name: deptry (via uv)
+        entry: bash -c 'cd app && uv run deptry src'
+        language: system
+        pass_filenames: false
+      - id: pyright
+        name: pyright (via uv)
+        entry: bash -c 'cd app && uv run pyright src/'
+        language: system
+        pass_filenames: false
+        types: [python]

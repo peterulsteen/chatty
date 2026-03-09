@@ -43,6 +43,14 @@ that wraps the FastAPI app. Using `chatty.main:app` starts HTTP but
 SocketIO connections fail silently. This applies to run.py, Dockerfile
 CMD, and any other invocation.
 
+## pre-commit
+pre-commit is wired as a git hook. After cloning or switching branches, run:
+  cd app && uv run pre-commit install
+To run manually against all files:
+  uv --project app run pre-commit run --all-files  (from repo root)
+Hooks: ruff (lint+format), pyright, deptry, pyproject-fmt, uv-lock, hygiene checks.
+Do not bypass hooks with --no-verify.
+
 ## Conventions
 
 - All dependencies managed via uv. Never use pip directly.

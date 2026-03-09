@@ -1,6 +1,7 @@
 """
 ChatroomParticipant Pydantic schemas for API requests and responses.
 """
+
 import re
 from datetime import datetime
 from typing import List
@@ -41,9 +42,7 @@ class ChatroomParticipantResponse(BaseModel):
 class ChatroomParticipantListResponse(BaseModel):
     """Response schema for listing chatroom participants."""
 
-    participants: List[ChatroomParticipantResponse] = Field(
-        ..., description="List of participants"
-    )
+    participants: List[ChatroomParticipantResponse] = Field(..., description="List of participants")
     total: int = Field(..., description="Total number of participants")
 
 

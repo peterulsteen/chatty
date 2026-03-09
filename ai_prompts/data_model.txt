@@ -2,7 +2,7 @@ All data models can be defined in sqlalchemy
 We can use sqllite as the db backend
 We do not need to save the database when the app shuts down. It is just a temporary db.
 
-Each model should have a uuid v4 as the id 
+Each model should have a uuid v4 as the id
 
 Each model should have a created_date and last_updated_date that are
 automatically set within the model
@@ -27,7 +27,7 @@ The models are basically:
 - The message has a property of parent_message_id that must be populated
 only when is_reply = true.
 
-- A model called chatroom_participant is an xref table containing 
+- A model called chatroom_participant is an xref table containing
 user_id and chatroom_id
 - Also add a property for joined date
 
@@ -162,5 +162,3 @@ Client Error Codes
 Server Error Codes
 
 500 Internal Server Error → unexpected errors you didn’t anticipate.
-
-

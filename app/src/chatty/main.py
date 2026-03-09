@@ -1,6 +1,7 @@
 """
 FastAPI application entrypoint.
 """
+
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 

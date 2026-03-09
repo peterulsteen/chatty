@@ -7,6 +7,9 @@ Chatty Backend experimentation
 cd app
 uv sync
 
+# Wire pre-commit hooks (one-time, after cloning)
+uv run pre-commit install
+
 # To run the local server (from app directory)
 uv run python run.py
 
