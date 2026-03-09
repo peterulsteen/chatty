@@ -10,7 +10,7 @@ Living document. Check off on merge to main. Never delete entries.
 - [x] Config / env var management (pydantic-settings + .env.example)
 - [x] CORS (CORSMiddleware + SocketIO cors_allowed_origins, env-driven)
 - [x] /ready readiness endpoint (do not touch existing /health/)
-- [ ] Add request_id to existing logging middleware
+- [x] Add request_id to existing logging middleware
 - [ ] Multi-stage Dockerfile (CMD: chatty.main:socketio_app)
 - [ ] docker-compose.yml
 - [ ] Justfile (dev, test, lint, typecheck, spec, build, up, down)

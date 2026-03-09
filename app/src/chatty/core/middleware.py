@@ -3,8 +3,10 @@ FastAPI middleware for logging requests and responses.
 """
 
 import time
+import uuid
 from typing import Callable
 
+import structlog.contextvars
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
@@ -26,6 +28,9 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Process request and log information."""
+        request_id = str(uuid.uuid4())
+        structlog.contextvars.bind_contextvars(request_id=request_id)
+
         # Extract request information
         method = request.method
         path = request.url.path
@@ -69,6 +74,8 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                 client_ip=client_ip,
             )
 
+        response.headers["X-Request-ID"] = request_id
+        structlog.contextvars.clear_contextvars()
         return response
 
     def _get_client_ip(self, request: Request) -> str:
