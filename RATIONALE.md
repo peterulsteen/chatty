@@ -114,16 +114,19 @@ All fixed as part of this task.
 ## GitHub Actions CI
 
 ### pre-commit as the single CI gate
+
 CI runs `uv --project app run pre-commit run --all-files` as the sole lint/format/typecheck
 step. No separate ruff or pyright steps — pre-commit owns those entirely, eliminating
 any drift between local and CI check definitions.
 
 ### uv cache via actions/cache
+
 The uv cache directory (from `setup-uv` outputs) is cached keyed on `app/uv.lock`.
 This avoids re-downloading packages on every run while ensuring the cache is invalidated
 when dependencies change.
 
 ### Fail-fast ordering
+
 pre-commit runs before pytest. Fast feedback on style/type issues without waiting for
 the test suite.
 
@@ -132,6 +135,7 @@ the test suite.
 ## Config / env var management
 
 ### 12-factor App configuration
+
 All application configuration is injected via environment variables, following
 [12-factor App](https://12factor.net/config) principle III. No config values are
 hardcoded in source. `pydantic-settings` reads from the environment (with `.env`
@@ -140,11 +144,13 @@ object imported wherever config is needed. `.env.example` is the public contract
 for required variables — `.env` is gitignored.
 
 ### Singleton settings object
+
 `config.py` exports `settings = Settings()` at module level. This is imported
 directly rather than passed as a dependency, since these are process-level constants
 that don't vary per-request. Avoids threading concerns and keeps callsites clean.
 
 ### APP_ENV drives logging verbosity
+
 `_is_production()` in `logging.py` now delegates to `settings.APP_ENV == "production"`
 rather than hardcoding `False`. DEBUG logging in development, INFO in production —
 no code changes required to switch environments.
@@ -154,6 +160,7 @@ no code changes required to switch environments.
 ## CORS
 
 ### Dual CORS configuration
+
 FastAPI's `CORSMiddleware` handles HTTP request CORS (see [FastAPI CORS docs](https://fastapi.tiangolo.com/tutorial/cors/#use-corsmiddleware)).
 SocketIO handles WebSocket upgrade CORS independently via its own `cors_allowed_origins`
 parameter — FastAPI middleware does not intercept the WebSocket handshake. Both are
@@ -161,9 +168,32 @@ wired to `settings.CORS_ORIGINS` so there is a single source of truth and they c
 drift apart. A comment in `main.py` documents this coupling explicitly.
 
 ### CORS_ORIGINS from environment
+
 `CORS_ORIGINS` is a `list[str]` in `Settings`, populated from the environment.
 In production, set `CORS_ORIGINS=["https://your-frontend.com"]`. Defaults to
 `["http://localhost:3000"]` for local development.
+
+---
+
+## /ready readiness endpoint
+
+### Separate route from /health/
+
+`GET /ready` is added to the existing `APIRouter` in `health.py` — no new router,
+no changes to `main.py`. The existing `/health/` route and its `HealthResponse` model
+are untouched. Readiness and liveness are intentionally distinct: `/health/` is a
+liveness probe (is the process alive?); `/ready` is a readiness probe (is the API
+ready to serve traffic?). Keeping them on the same router avoids router proliferation
+while maintaining the semantic distinction.
+
+### ReadyResponse shape and DB check
+
+Returns `{"status": "ok", "checks": {"api": "ok", "db": "ok"}}`. The `checks` dict
+is a `dict[str, str]` — extensible to future dependency checks without a schema
+change. If any check fails the top-level status is `"degraded"` and the endpoint
+returns HTTP 503, so orchestrators remove the instance from the load balancer without
+restarting it. The DB check issues a `SELECT 1` via `SessionLocal` — cheap enough for
+a 10s probe interval and sufficient to detect a broken connection.
 
 ---
 

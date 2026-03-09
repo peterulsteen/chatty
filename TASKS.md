@@ -9,7 +9,7 @@ Living document. Check off on merge to main. Never delete entries.
 - [x] GitHub Actions CI (pre-commit run --all-files as single source of truth)
 - [x] Config / env var management (pydantic-settings + .env.example)
 - [x] CORS (CORSMiddleware + SocketIO cors_allowed_origins, env-driven)
-- [ ] /ready readiness endpoint (do not touch existing /health/)
+- [x] /ready readiness endpoint (do not touch existing /health/)
 - [ ] Add request_id to existing logging middleware
 - [ ] Multi-stage Dockerfile (CMD: chatty.main:socketio_app)
 - [ ] docker-compose.yml
