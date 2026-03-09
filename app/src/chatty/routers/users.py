@@ -52,7 +52,7 @@ async def create_user(
         db.commit()
         db.refresh(db_user)
         
-        return UserResponse.from_orm(db_user)
+        return UserResponse.model_validate(db_user)
         
     except IntegrityError:
         db.rollback()
@@ -94,7 +94,7 @@ async def get_user(
             detail="User not found"
         )
     
-    return UserResponse.from_orm(user)
+    return UserResponse.model_validate(user)
 
 
 @router.get("/", response_model=UserListResponse)
@@ -112,7 +112,7 @@ async def list_users(
     """
     users = db.query(User).all()
     
-    user_responses = [UserResponse.from_orm(user) for user in users]
+    user_responses = [UserResponse.model_validate(user) for user in users]
     
     return UserListResponse(
         users=user_responses,
@@ -159,7 +159,7 @@ async def update_user(
         db.commit()
         db.refresh(user)
         
-        return UserResponse.from_orm(user)
+        return UserResponse.model_validate(user)
         
     except IntegrityError:
         db.rollback()

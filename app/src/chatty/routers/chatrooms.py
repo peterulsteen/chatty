@@ -51,7 +51,7 @@ async def create_chatroom(
         db.commit()
         db.refresh(db_chatroom)
         
-        return ChatroomResponse.from_orm(db_chatroom)
+        return ChatroomResponse.model_validate(db_chatroom)
         
     except IntegrityError:
         db.rollback()
@@ -93,7 +93,7 @@ async def get_chatroom(
             detail="Chatroom not found"
         )
     
-    return ChatroomResponse.from_orm(chatroom)
+    return ChatroomResponse.model_validate(chatroom)
 
 
 @router.get("/", response_model=ChatroomListResponse)
@@ -111,7 +111,7 @@ async def list_chatrooms(
     """
     chatrooms = db.query(Chatroom).all()
     
-    chatroom_responses = [ChatroomResponse.from_orm(chatroom) for chatroom in chatrooms]
+    chatroom_responses = [ChatroomResponse.model_validate(chatroom) for chatroom in chatrooms]
     
     return ChatroomListResponse(
         chatrooms=chatroom_responses,
@@ -155,7 +155,7 @@ async def update_chatroom(
         db.commit()
         db.refresh(chatroom)
         
-        return ChatroomResponse.from_orm(chatroom)
+        return ChatroomResponse.model_validate(chatroom)
         
     except IntegrityError:
         db.rollback()
