@@ -92,10 +92,11 @@ async def startup_event():
     """Initialize database tables on application startup."""
     logger.info("Starting up Chatty Backend application")
     
-    # Clean out existing database and create fresh tables
-    from chatty.core.database import Base, engine
-    Base.metadata.drop_all(bind=engine)  # Drop all existing tables
-    logger.info("Existing database tables dropped")
+    # DEV SCAFFOLDING: nukes the entire DB on every restart
+    # use only for local iteration, never in production
+    # from chatty.core.database import Base, engine
+    # Base.metadata.drop_all(bind=engine)  # Drop all existing tables
+    # logger.info("Existing database tables dropped")
 
     create_tables()
     logger.info("Fresh database tables created successfully")
