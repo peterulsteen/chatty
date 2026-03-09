@@ -18,6 +18,23 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class ReadyResponse(BaseModel):
+    """Readiness check response model."""
+
+    status: str
+    checks: dict[str, str]
+
+
+@router.get("/ready", response_model=ReadyResponse)
+async def ready() -> ReadyResponse:
+    """
+    Readiness check endpoint.
+
+    Returns ok when the API is ready to serve traffic.
+    """
+    return ReadyResponse(status="ok", checks={"api": "ok"})
+
+
 @router.get("/", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
     """
