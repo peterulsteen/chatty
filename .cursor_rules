@@ -2,7 +2,7 @@
 
 [style]
 indent_size = 4
-max_line_length = 88
+max_line_length = 100
 quote_style = double
 trailing_commas = true
 spaces_around_operators = true
@@ -28,7 +28,7 @@ style = google
 
 [errors]
 allow_unused_variables = true
-allow_print_statements = true
+allow_print_statements = false
 allow_todo_comments = true
 
 [collaboration]
@@ -73,8 +73,8 @@ terraform = "Infrastructure as code, .tf files, modules, variables"
 app = "FastAPI app source code, Poetry config, and dependencies"
 
 # Within app/, organize code as follows:
-app/pyproject.toml = "Poetry configuration and dependencies"
-app/poetry.lock = "Poetry lock file for reproducible builds"
+app/pyproject.toml = "uv/hatchling configuration and dependencies"
+app/uv.lock = "uv lock file for reproducible builds"
 app/run.py = "Development script to run the FastAPI application"
 app/src/chatty/ = "Main package source code"
 app/src/chatty/main.py = "App entrypoint"

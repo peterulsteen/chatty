@@ -46,7 +46,19 @@ line-length = 100
 indent-width = 4
 format.indent-style = "space"
 format.quote-style = "double"
-lint.select = [ "E", "F", "I" ]
+lint.select = [
+  "E",   # pycodestyle errors
+  "F",   # pyflakes
+  "I",   # isort
+  "N",   # pep8-naming
+  "T20", # flake8-print (no print statements)
+]
+lint.ignore = [
+  "F841", # unused variables — permitted per project convention
+]
+lint.per-file-ignores."tests_smoke/*" = [
+  "T20", # smoke tests use print for debug output intentionally
+]
 lint.isort.known-first-party = [ "chatty" ]
 
 [tool.deptry]

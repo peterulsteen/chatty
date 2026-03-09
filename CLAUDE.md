@@ -2,9 +2,8 @@
 
 ## Project
 
-chatty is a Python FastAPI + SocketIO backend being operationalized as a
-platform engineering exercise. The goal is DevOps, infrastructure, and
-SDLC best practices — not new features.
+chatty is a Python FastAPI + SocketIO backend being operationalized as a platform engineering
+exercise. The goal is DevOps, infrastructure, and SDLC best practices — not new features.
 
 ## Stack
 
@@ -30,26 +29,37 @@ src layout — package lives at `app/src/chatty/`.
 
 ## Critical: uv commands run from app/
 
-pyproject.toml is in `app/`, not at repo root. All uv commands must be
-run from the `app/` directory:
-  cd app && uv run python run.py
-  cd app && uv run pytest -W ignore
-  cd app && uv run ruff check src/
+pyproject.toml is in `app/`, not at repo root. All uv commands must be run from the `app/`
+directory:
+
+```
+cd app && uv run python run.py
+cd app && uv run pytest -W ignore
+cd app && uv run ruff check src/
+```
 
 ## Critical: uvicorn targets socketio_app, not app
 
-The entry point is `chatty.main:socketio_app` — the SocketIO ASGI wrapper
-that wraps the FastAPI app. Using `chatty.main:app` starts HTTP but
-SocketIO connections fail silently. This applies to run.py, Dockerfile
-CMD, and any other invocation.
+The entry point is `chatty.main:socketio_app` — the SocketIO ASGI wrapper that wraps the FastAPI
+app. Using `chatty.main:app` starts HTTP but SocketIO connections fail silently. This applies to
+run.py, Dockerfile CMD, and any other invocation.
 
 ## pre-commit
+
 pre-commit is wired as a git hook. After cloning or switching branches, run:
-  cd app && uv run pre-commit install
+
+```
+cd app && uv run pre-commit install
+```
+
 To run manually against all files:
-  uv --project app run pre-commit run --all-files  (from repo root)
-Hooks: ruff (lint+format), pyright, deptry, pyproject-fmt, uv-lock, hygiene checks.
-Do not bypass hooks with --no-verify.
+
+```
+uv --project app run pre-commit run --all-files  # from repo root
+```
+
+Hooks: ruff (lint+format), pyright, deptry, pyproject-fmt, uv-lock, mdformat, hygiene checks. Do not
+bypass hooks with `--no-verify`.
 
 ## Conventions
 
@@ -61,11 +71,44 @@ Do not bypass hooks with --no-verify.
 - Type hints on all new functions and return values.
 - Tests must pass after every change: cd app && uv run pytest -W ignore
 
+## Python style
+
+The following are enforced automatically by ruff — do not configure editors to contradict them:
+
+- Line length: 100 characters (`E501`)
+- Indentation: 4 spaces (`indent-width = 4`)
+- Quotes: double (`format.quote-style = "double"`)
+- Import order: stdlib → third-party → local (`I` rules, `isort`)
+- Blank lines: 2 around top-level functions and classes (`E302`)
+- Spaces around operators and after commas (`E225`, `E231`)
+- Naming conventions: snake_case functions/variables/arguments, PascalCase classes (`N` rules)
+- No `print()` statements — use the structured logger (`T20` rules)
+- Unused variables are permitted (`F841` ignored) but should be avoided in new code
+
+Trailing commas: always add a trailing comma on the last element of a multi-line collection or
+argument list. ruff preserves and respects magic trailing commas.
+
+## Docstrings
+
+Not required on every function, but when written use Google style:
+
+```python
+def foo(x: int) -> str:
+    """Short summary.
+
+    Args:
+        x: Description of x.
+
+    Returns:
+        Description of return value.
+    """
+```
+
 ## Naming conventions
 
-- Functions and variables: snake_case
+- Functions, variables, and arguments: snake_case
 - Classes: PascalCase
-- Constants: UPPER_CASE
+- Module-level constants: UPPER_CASE
 
 ## FastAPI conventions
 
@@ -91,7 +134,8 @@ Do not bypass hooks with --no-verify.
 
 ## Ambiguity
 
-When requirements, data types, or business logic are ambiguous, ask before implementing. Do not guess.
+When requirements, data types, or business logic are ambiguous, ask before implementing. Do not
+guess.
 
 ## What NOT to do
 
@@ -105,15 +149,13 @@ When requirements, data types, or business logic are ambiguous, ask before imple
 
 ## Atomic change rule
 
-If a change touches more than 3-4 files for unrelated reasons,
-it is not atomic. Stop and ask for the task to be decomposed further.
+If a change touches more than 3-4 files for unrelated reasons, it is not atomic. Stop and ask for
+the task to be decomposed further.
 
 ## Per-task workflow
 
-Each task has explicit acceptance criteria in TASKS.md.
-Read the current task before starting.
-Only change what the task scope specifies.
-Run acceptance commands from TASKS.md before marking done.
+Each task has explicit acceptance criteria in TASKS.md. Read the current task before starting. Only
+change what the task scope specifies. Run acceptance commands from TASKS.md before marking done.
 
 ## Before every commit
 
