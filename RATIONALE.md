@@ -200,6 +200,27 @@ connection.
 
 ______________________________________________________________________
 
+## request_id logging middleware
+
+### UUID4 per request, bound to structlog contextvars
+
+A UUID4 `request_id` is generated at the top of `LoggingMiddleware.dispatch()` and bound via
+`structlog.contextvars.bind_contextvars()`. structlog's `merge_contextvars` processor is already in
+the chain, so every log call within the request — including those in routers and services — emits
+`request_id` automatically with no changes to existing callsites.
+
+### X-Request-ID response header
+
+`request_id` is written to `response.headers["X-Request-ID"]` before returning, making it available
+to API clients for distributed tracing and support correlation.
+
+### clear_contextvars after response
+
+`structlog.contextvars.clear_contextvars()` is called after the header is set. This prevents
+`request_id` from leaking into subsequent requests on the same worker thread.
+
+______________________________________________________________________
+
 ## AI Use
 
 This project uses Claude Code (claude-sonnet-4-6) as a pair-programming assistant throughout the
