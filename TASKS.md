@@ -11,7 +11,7 @@ Living document. Check off on merge to main. Never delete entries.
 - [x] CORS (CORSMiddleware + SocketIO cors_allowed_origins, env-driven)
 - [x] /ready readiness endpoint (do not touch existing /health/)
 - [x] Add request_id to existing logging middleware
-- [ ] Multi-stage Dockerfile (CMD: chatty.main:socketio_app)
+- [x] Multi-stage Dockerfile (CMD: chatty.main:socketio_app)
 - [ ] docker-compose.yml
 - [ ] Justfile (dev, test, lint, typecheck, spec, build, up, down)
 - [ ] OpenAPI spec export script
