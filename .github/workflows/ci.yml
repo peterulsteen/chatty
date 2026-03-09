@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python and uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.11"
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.UV_CACHE_DIR }}
+          key: uv-${{ runner.os }}-${{ hashFiles('app/uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+
+      - name: Install dependencies
+        working-directory: app
+        run: uv sync
+
+      - name: Run pre-commit
+        run: uv --project app run pre-commit run --all-files
+
+      - name: Run tests
+        working-directory: app
+        run: uv run pytest -W ignore
