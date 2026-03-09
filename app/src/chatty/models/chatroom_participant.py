@@ -1,9 +1,8 @@
 """
 ChatroomParticipant database model.
 """
-from sqlalchemy import Column, String, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import relationship
-from sqlalchemy.exc import IntegrityError
 
 from chatty.core.database import BaseModel
 
@@ -42,4 +41,7 @@ class ChatroomParticipant(BaseModel):
     
     def __repr__(self) -> str:
         """String representation of ChatroomParticipant."""
-        return f"<ChatroomParticipant(id={self.id}, user_id='{self.user_id}', chatroom_id='{self.chatroom_id}')>"
+        return (
+            f"<ChatroomParticipant(id={self.id}, user_id='{self.user_id}', "
+            f"chatroom_id='{self.chatroom_id}')>"
+        )

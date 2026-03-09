@@ -1,7 +1,6 @@
 """
 Hello world endpoints.
 """
-from typing import Dict, Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel

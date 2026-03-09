@@ -2,13 +2,13 @@
 Chatroom participant management endpoints.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from chatty.core.database import get_db
+from chatty.models.chatroom import Chatroom
 from chatty.models.chatroom_participant import ChatroomParticipant
 from chatty.models.user import User
-from chatty.models.chatroom import Chatroom
 from chatty.schemas.chatroom_participant import (
     ChatroomParticipantCreateRequest,
     ChatroomParticipantResponse,
@@ -108,7 +108,11 @@ async def delete_chatroom_participant(
 
 
 # TODO - Confirm need for this endpoint
-@router.delete("/user/{user_id}/chatroom/{chatroom_id}", response_model=DeleteResponse, status_code=status.HTTP_200_OK)
+@router.delete(
+    "/user/{user_id}/chatroom/{chatroom_id}",
+    response_model=DeleteResponse,
+    status_code=status.HTTP_200_OK,
+)
 async def remove_user_from_chatroom(
     user_id: str,
     chatroom_id: str,

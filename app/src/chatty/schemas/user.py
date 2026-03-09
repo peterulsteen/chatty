@@ -105,7 +105,9 @@ class UserChatroomResponse(BaseModel):
 
 class UserChatroomListResponse(BaseModel):
     """Response schema for listing user's chatrooms."""
-    chatrooms: List[UserChatroomResponse] = Field(..., description="List of chatrooms the user participates in")
+    chatrooms: List[UserChatroomResponse] = Field(
+        ..., description="List of chatrooms the user participates in"
+    )
     total: int = Field(..., description="Total number of chatrooms")
 
 
