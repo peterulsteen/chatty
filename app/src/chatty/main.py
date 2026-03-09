@@ -147,7 +147,8 @@ app.include_router(
 # Set Socket.IO server in messages router for event emission
 messages.set_socketio_server(sio)
 
-# Mount Socket.IO app
+# Dead code when socketio_app is the entrypoint: socketio.ASGIApp intercepts /socket.io/ before
+# passing anything to app, so this mount is never reached. Kept for clarity.
 app.mount("/socket.io/", socketio_app)
 
 

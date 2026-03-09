@@ -221,6 +221,48 @@ to API clients for distributed tracing and support correlation.
 
 ______________________________________________________________________
 
+## Multi-stage Dockerfile
+
+### Two-stage build: builder + final
+
+The builder stage installs Python dependencies into `/build/.venv` using
+`uv sync --frozen --no-dev`. The final stage copies only the venv and application source — no build
+tooling, no uv, no lock files — keeping the runtime image lean.
+
+### --no-install-project in builder
+
+`uv sync --no-install-project` installs only dependencies, not the chatty package itself. The source
+is copied to `/app/src/` in the final stage and made importable via `PYTHONPATH=/app/src`. This
+means changes to application source do not invalidate the dependency cache layer, keeping iterative
+builds fast.
+
+### CMD targets socketio_app, not app
+
+`chatty.main:socketio_app` is the uvicorn entrypoint, not `chatty.main:app`. `socketio.ASGIApp`
+intercepts WebSocket upgrade requests at the raw ASGI level before they reach FastAPI's
+`BaseHTTPMiddleware` stack. `BaseHTTPMiddleware` does not support WebSocket protocol upgrades, so
+using `app` as the entrypoint causes SocketIO connections to fail silently.
+
+### Non-root user (uid 1001)
+
+The container runs as a dedicated non-root user created with `useradd --uid 1001`. No home directory
+or login shell is created — the user exists solely to drop privileges at runtime.
+
+### Image pinning
+
+Base images are pinned by tag (`python:3.11-slim`, `uv:0.10.9`). Digest SHA pinning
+(`python:3.11-slim@sha256:...`) would eliminate tag mutability but requires an automated update
+mechanism — pinning without one trades a small risk for a guaranteed staleness problem. The correct
+pairing is digest pinning + Renovate. That is a reasonable next step for a production deployment but
+out of scope here.
+
+### .dockerignore
+
+`.git`, `__pycache__`, `.env`, `.venv`, test directories, and `*.db` are excluded. This prevents
+secrets, local state, and test fixtures from entering the build context or the image.
+
+______________________________________________________________________
+
 ## AI Use
 
 This project uses Claude Code (claude-sonnet-4-6) as a pair-programming assistant throughout the
