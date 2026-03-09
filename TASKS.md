@@ -4,7 +4,7 @@ Living document. Check off on merge to main. Never delete entries.
 
 - [x] Bootstrap — CLAUDE.md, TASKS.md, .env.example skeleton, comment out drop_all
 - [x] Migrate Poetry → uv (add ruff + pyright to dev deps)
-- [ ] Bump FastAPI to current version; replace deprecated `@app.on_event` with `lifespan`
+- [x] Bump FastAPI to current version; replace deprecated `@app.on_event` with `lifespan`
 - [ ] Config / env var management (pydantic-settings + .env.example)
 - [ ] CORS (CORSMiddleware + SocketIO cors_allowed_origins, env-driven)
 - [ ] /ready readiness endpoint (do not touch existing /health/)

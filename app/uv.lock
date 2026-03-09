@@ -284,12 +284,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi", specifier = ">=0.104.1" },
-    { name = "pydantic", specifier = ">=2.5.0" },
-    { name = "python-socketio", specifier = ">=5.10.0" },
-    { name = "sqlalchemy", specifier = ">=2.0.23" },
-    { name = "structlog", specifier = ">=23.2.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.24.0" },
+    { name = "fastapi", specifier = ">=0.115.0,<1" },
+    { name = "pydantic", specifier = ">=2.10.0,<3" },
+    { name = "python-socketio", specifier = ">=5.10.0,<6" },
+    { name = "sqlalchemy", specifier = ">=2.0.0,<3" },
+    { name = "structlog", specifier = ">=24.0.0,<26" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.29.0,<1" },
 ]
 
 [package.metadata.requires-dev]

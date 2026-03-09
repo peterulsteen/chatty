@@ -2,12 +2,11 @@
 Database configuration and session management.
 """
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Generator
 
 from sqlalchemy import Column, DateTime, String, create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 # SQLite database URL for temporary database
 SQLALCHEMY_DATABASE_URL = "sqlite:///./chatty.db"
@@ -31,11 +30,11 @@ class BaseModel(Base):
     __abstract__ = True
     
     id = Column(String(36), primary_key=True,  default=lambda: str(uuid.uuid4()))
-    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_date = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     last_updated_date = Column(
         DateTime, 
-        default=datetime.utcnow, 
-        onupdate=datetime.utcnow, 
+        default=lambda: datetime.now(UTC), 
+        onupdate=lambda: datetime.now(UTC), 
         nullable=False
     )
 
