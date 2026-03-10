@@ -883,6 +883,65 @@ After 3+ months of stable production usage:
 
 ______________________________________________________________________
 
+## General SDLC
+
+### Trunk-based development
+
+The repository uses trunk-based development: all work happens on short-lived feature branches
+branched from `main`, merged via PR, and deleted. No long-lived `develop` or `release` branches.
+`main` is always in a releasable state — every merge triggers CI and the smoke-test suite.
+
+Branch naming follows a `type/short-description` convention (`feat/`, `fix/`, `chore/`, `docs/`).
+Branches are kept to a single atomic concern; if a change touches more than 3-4 unrelated files it
+is a signal to decompose it.
+
+### PR gates
+
+Every PR to `main` must pass all three CI jobs before merge is permitted:
+
+- `ci` — pre-commit (lint, typecheck, format, secrets scan), pip-audit, unit tests
+- `terraform-security` — terraform fmt, TFLint, Trivy IaC scan
+- `smoke-test` — docker build, Trivy image scan, docker compose up, smoke tests
+
+Squash merge is the only permitted merge strategy. This keeps `git log main` linear: one commit per
+PR, each referencing a single task. Rebase is used to keep feature branches current with `main`
+before opening a PR.
+
+Branch protection rules (to be enabled on the GitHub repo):
+
+- Require status checks: `ci`, `terraform-security`, `smoke-test`
+- Require at least 1 approving review
+- Dismiss stale reviews on new push
+- Restrict force-push to `main`
+
+### Release strategy
+
+There is no separate release branch or tagging ceremony at this stage. Every merge to `main` is a
+candidate for deployment to staging. Promotion to production is a manual trigger on the CD pipeline
+(not yet wired — see CI/CD approach section).
+
+When the CD pipeline is implemented, the release artifact is the Docker image tagged with the full
+Git SHA (`git rev-parse --short HEAD`). Semantic versioning is not used; the SHA is the canonical
+identifier that ties a running container back to the exact commit that produced it.
+
+### Dependency update automation
+
+Automated dependency updates are table stakes for a production service. The intended tool is
+**Renovate** rather than Dependabot: Renovate has better monorepo support, more granular
+configuration (group updates by ecosystem, schedule updates by day/time, auto-merge patch bumps),
+and produces one PR per dependency group rather than one per package.
+
+A `.renovaterc` at the repo root would configure:
+
+- Python deps (`uv` ecosystem) — weekly, auto-merge patch, manual review for minor/major
+- Terraform providers — monthly, manual review
+- Docker base image digests — weekly, auto-merge
+- GitHub Actions — weekly, auto-merge patch
+
+This is not yet implemented. Until it is, dependency updates are manual.
+
+______________________________________________________________________
+
 ## AI Use
 
 This project uses Claude Code (claude-sonnet-4-6) as a pair-programming assistant throughout the

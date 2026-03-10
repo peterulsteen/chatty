@@ -33,7 +33,7 @@ Living document. Check off on merge to main.
 - [x] Exposing service to front-end — ALB + CloudFront topology, WebSocket routing
 - [x] Auto scaling + load testing — ECS target tracking, Locust baseline approach
 - [x] Cloud spend management — tagging strategy, Savings Plans, VPC endpoint savings
-- [ ] General SDLC — trunk-based dev, PR gates, release strategy, Renovate for dependency updates
+- [x] General SDLC — trunk-based dev, PR gates, release strategy, Renovate for dependency updates
 - [ ] Full DevSecOps pipeline design — shift-left layers (pre-commit), CI scan gates (Trivy,
   pip-audit, checkov), CD gates (secret scanning before ECR push), policy enforcement
   (OPA/Sentinel), image signing (cosign)
