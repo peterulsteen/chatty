@@ -550,6 +550,24 @@ local invocations exactly.
 
 ______________________________________________________________________
 
+## Trivy image scan
+
+### Container CVE scanning in CI
+
+The `smoke-test` job builds the image explicitly (`docker build -t chatty:latest .`) before running
+`docker compose up`. Trivy scans `chatty:latest` between those two steps — if the image contains a
+known HIGH or CRITICAL CVE, CI fails before the container ever starts.
+
+Adding `image: chatty:latest` to the `app` service in `docker-compose.yml` ensures compose uses the
+already-built and scanned image rather than rebuilding from scratch, so the scanned artifact is
+exactly what runs in the smoke tests.
+
+This scan is distinct from the IaC scan in the `terraform-security` job (which scans Terraform HCL
+for misconfigurations). The image scan checks OS packages and language runtime dependencies inside
+the container for known vulnerabilities.
+
+______________________________________________________________________
+
 ______________________________________________________________________
 
 ## Design decisions (not yet implemented in code)

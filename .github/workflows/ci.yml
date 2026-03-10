@@ -108,7 +108,18 @@ jobs:
         working-directory: app
         run: uv sync
 
-      - name: Build and start stack
+      - name: Build image
+        run: docker build -t chatty:latest .
+
+      - name: Trivy — scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: image
+          image-ref: chatty:latest
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+
+      - name: Start stack
         run: docker compose up -d --wait
 
       - name: Run smoke tests
