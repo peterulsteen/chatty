@@ -263,6 +263,15 @@ secrets, local state, and test fixtures from entering the build context or the i
 
 ______________________________________________________________________
 
+## OpenAPI spec export
+
+FastAPI generates and serves the OpenAPI spec at runtime (`/openapi.json`, `/docs`). A static export
+script adds value for specific tooling — API Gateway import, SDK generation, committing the spec to
+version control for PR diffs — but none of those workflows are relevant at this stage. Not
+implemented; not a gap worth discussing in the interview.
+
+______________________________________________________________________
+
 ## AI Use
 
 This project uses Claude Code (claude-sonnet-4-6) as a pair-programming assistant throughout the

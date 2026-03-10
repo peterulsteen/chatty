@@ -13,11 +13,11 @@ from chatty.config import settings
 
 SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 
+# SQLite requires check_same_thread=False; Postgres does not accept this arg
+_connect_args = {"check_same_thread": False} if SQLALCHEMY_DATABASE_URL.startswith("sqlite") else {}
+
 # Create SQLAlchemy engine
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},  # Needed for SQLite
-)
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=_connect_args)
 
 # Create SessionLocal class
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
