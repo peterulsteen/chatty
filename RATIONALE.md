@@ -578,6 +578,78 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
+## Auth/authz approach
+
+### JWT verification at the ALB layer
+
+Authentication is handled at the ALB before requests reach the application. AWS ALB natively
+integrates with Cognito user pools and any OIDC-compliant identity provider. With
+`authenticate-cognito` or `authenticate-oidc` actions on the HTTPS listener, the ALB exchanges the
+authorization code for tokens, validates the JWT signature against the IdP's public keys, and
+forwards the verified claims to the application as `X-Amzn-Oidc-*` headers. Unauthenticated requests
+receive a 401 before they touch application code.
+
+This offloads token validation entirely from the application: no JWT library to maintain, no key
+rotation logic, no token parsing in the hot path. The application trusts the headers the ALB injects
+— this is safe because the application is only reachable via the ALB (security group
+`aws_security_group.app` allows inbound only from `aws_security_group.alb`).
+
+### FastAPI authorization via Depends
+
+Once authentication is handled at the ALB, the application layer handles authorization — _what the
+verified identity is permitted to do_.
+
+The standard pattern is a reusable FastAPI dependency:
+
+```python
+from fastapi import Depends, Header, HTTPException
+
+
+def current_user(
+    x_amzn_oidc_identity: str = Header(...),
+    x_amzn_oidc_data: str = Header(...),
+) -> dict:
+    """Extract verified claims injected by the ALB."""
+    # ALB has already validated the JWT; parse the payload without re-verification.
+    import base64, json
+    payload = json.loads(base64.b64decode(x_amzn_oidc_data + "=="))
+    return payload
+
+
+async def get_messages(user: dict = Depends(current_user)) -> list[Message]:
+    ...
+```
+
+Role or scope checks are added inside `current_user` or as additional dependencies layered on top.
+This keeps authorization logic co-located with route definitions and testable in isolation by
+injecting a fake dependency in tests.
+
+### SocketIO authentication
+
+SocketIO connections authenticate on the initial HTTP upgrade request, which passes through the ALB
+like any other request. The ALB validates the JWT and injects the identity headers before the
+connection is upgraded to WebSocket. The `python-socketio` `AsyncServer` receives the verified
+headers in the `environ` dict in the `connect` event handler:
+
+```python
+@sio.event
+async def connect(sid, environ, auth):
+    identity = environ.get("HTTP_X_AMZN_OIDC_IDENTITY")
+    if not identity:
+        raise ConnectionRefusedError("unauthenticated")
+    await sio.save_session(sid, {"user": identity})
+```
+
+### What is not yet wired
+
+- No Cognito user pool or OIDC provider is defined in Terraform.
+- The ALB listener rules do not include `authenticate-cognito` or `authenticate-oidc` actions.
+- No `current_user` dependency exists in the application.
+- Local development uses no authentication; the `.env` pattern would need a flag to bypass the ALB
+  headers for local runs.
+
+______________________________________________________________________
+
 ## CI/CD approach
 
 ### Pipeline design

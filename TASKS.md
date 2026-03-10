@@ -28,7 +28,7 @@ Living document. Check off on merge to main.
 
 ## Document only (RATIONALE.md)
 
-- [ ] Auth/authz approach — JWT + ALB/Cognito design, FastAPI Depends pattern
+- [x] Auth/authz approach — JWT + ALB/Cognito design, FastAPI Depends pattern
 - [x] CI/CD approach — CD pipeline design (ECR push → ECS rolling deploy → rollback)
 - [x] Exposing service to front-end — ALB + CloudFront topology, WebSocket routing
 - [x] Auto scaling + load testing — ECS target tracking, Locust baseline approach
