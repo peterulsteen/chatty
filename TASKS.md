@@ -21,7 +21,10 @@ Living document. Check off on merge to main.
 
 ## Implement
 
-- [ ] Justfile (dev, test, build, up, down — no lint/typecheck, pre-commit owns those)
+- [x] Justfile (dev, test, build, up, down — no lint/typecheck, pre-commit owns those)
+- [ ] `pip-audit` in CI — dependency vulnerability scan against PyPI advisory database
+- [ ] `trivy` image scan in CI — container CVE scan after docker build (distinct from IaC scan)
+- [ ] `.github/PULL_REQUEST_TEMPLATE.md`
 
 ## Document only (RATIONALE.md)
 
@@ -30,7 +33,11 @@ Living document. Check off on merge to main.
 - [x] Exposing service to front-end — ALB + CloudFront topology, WebSocket routing
 - [x] Auto scaling + load testing — ECS target tracking, Locust baseline approach
 - [x] Cloud spend management — tagging strategy, Savings Plans, VPC endpoint savings
-- [ ] General SDLC — trunk-based dev, PR gates, release strategy
+- [ ] General SDLC — trunk-based dev, PR gates, release strategy, Renovate for dependency updates
+- [ ] Full DevSecOps pipeline design — shift-left layers (pre-commit), CI scan gates (Trivy,
+  pip-audit, checkov), CD gates (secret scanning before ECR push), policy enforcement
+  (OPA/Sentinel), image signing (cosign)
+- [ ] OpenTelemetry tracing approach — instrumentation design, OTLP exporter, collector sidecar
 
 ## Final pass
 
