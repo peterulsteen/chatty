@@ -16,6 +16,7 @@ classifiers = [
 ]
 dependencies = [
   "fastapi>=0.115,<1",
+  "psycopg2-binary>=2.9,<3",
   "pydantic>=2.10,<3",
   "pydantic-settings>=2.3,<3",
   "python-socketio>=5.10,<6",
@@ -63,7 +64,8 @@ lint.isort.known-first-party = [ "chatty" ]
 
 [tool.deptry]
 per_rule_ignores.DEP002 = [
-  "uvicorn", # declared as production dep but invoked via CLI, not imported. Legitimate runtime dependency.
+  "uvicorn",         # declared as production dep but invoked via CLI, not imported. Legitimate runtime dependency.
+  "psycopg2-binary", # loaded by SQLAlchemy via DATABASE_URL scheme, not imported directly.
 ]
 per_rule_ignores.DEP003 = [
   "starlette", # imported directly in middleware but is a transitive dep of FastAPI
