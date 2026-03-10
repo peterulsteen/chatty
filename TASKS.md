@@ -17,19 +17,19 @@ Living document. Check off on merge to main.
 - [x] docker-compose.yml (app + Postgres service, DATABASE_URL wired via env)
 - [x] Alembic skeleton (migration infrastructure — env.py, versions/, not a schema migration)
 - [x] Smoke tests in CI (docker compose up --wait + pytest tests_smoke/)
+- [x] Terraform skeleton (bootstrap + modules/networking/alb/ecs/rds + dev/staging/prod envs)
 
 ## Implement
 
-- [ ] Terraform skeleton (VPC + ECS + RDS resource graph demonstrating dependency order)
 - [ ] Justfile (dev, test, build, up, down — no lint/typecheck, pre-commit owns those)
 
 ## Document only (RATIONALE.md)
 
 - [ ] Auth/authz approach — JWT + ALB/Cognito design, FastAPI Depends pattern
-- [ ] CI/CD approach — CD pipeline design (ECR push → ECS rolling deploy → rollback)
-- [ ] Exposing service to front-end — ALB + CloudFront topology, WebSocket routing
-- [ ] Auto scaling + load testing — ECS target tracking, Locust baseline approach
-- [ ] Cloud spend management — tagging strategy, Savings Plans, VPC endpoint savings
+- [x] CI/CD approach — CD pipeline design (ECR push → ECS rolling deploy → rollback)
+- [x] Exposing service to front-end — ALB + CloudFront topology, WebSocket routing
+- [x] Auto scaling + load testing — ECS target tracking, Locust baseline approach
+- [x] Cloud spend management — tagging strategy, Savings Plans, VPC endpoint savings
 - [ ] General SDLC — trunk-based dev, PR gates, release strategy
 
 ## Final pass

@@ -145,3 +145,8 @@ venv.bak/
 
 # SQLite database files
 *.db
+
+# Terraform
+**/.terraform/
+**/*.tfplan
+**/crash.log

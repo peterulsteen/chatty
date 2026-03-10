@@ -8,6 +8,9 @@ Chatty Backend experimentation
 
 ```bash
 # Requires Python 3.11+ and uv (https://docs.astral.sh/uv/getting-started/installation/)
+# Also requires terraform on PATH for the terraform_fmt pre-commit hook.
+# Recommended: install via mise (https://mise.jdx.dev/) — `mise install` picks up .mise.toml if present,
+# or: mise use terraform@latest
 cd app
 uv sync
 
@@ -41,6 +44,28 @@ uv run pytest tests_smoke/smoke_socketio.py
 ```
 
 Smoke tests also run automatically in CI as a separate `smoke-test` job after unit tests pass.
+
+## Infrastructure (Terraform)
+
+```bash
+# One-time bootstrap — provisions S3 + DynamoDB for state backend
+cd terraform/bootstrap
+terraform init
+terraform apply -var="project=chatty" -var="aws_region=us-east-1"
+
+# Per-environment apply
+cd terraform/environments/dev
+# Fill in backend.hcl with bootstrap outputs, then:
+terraform init -backend-config=backend.hcl
+terraform plan -var-file=terraform.tfvars
+terraform apply -var-file=terraform.tfvars
+
+# Validate all environments (no AWS credentials required)
+cd terraform/environments/dev && terraform init -backend=false && terraform validate
+```
+
+Environments: `dev` (single NAT, no RDS), `staging` (RDS enabled), `prod` (Multi-AZ RDS,
+`prevent_destroy`, minimum 2 ECS tasks).
 
 ## To Do / To Discuss
 
