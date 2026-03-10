@@ -45,4 +45,4 @@ Living document. Check off on merge to main.
 
 ## Final pass
 
-- [ ] RATIONALE.md + README polish
+- [x] RATIONALE.md + README polish

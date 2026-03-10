@@ -1,608 +1,381 @@
 # RATIONALE.md
 
-Running log of decisions made during operationalization of the chatty backend. Updated with each
-task. Never delete entries.
+Decisions made during operationalization of the chatty backend, organized by concern.
 
 ______________________________________________________________________
 
-## Bootstrap
+## TL;DR
 
-### Commented out drop_all
+**Key decisions:**
 
-`Base.metadata.drop_all` in `main.py` was active in the initial commit — nukes the DB on every
-restart. Commented out to prevent data loss in any environment beyond solo local iteration.
+- **Package management**: uv replaces Poetry; src layout unchanged; all config via pydantic-settings
+  (12-factor, no hardcoded values).
+- **Code quality**: ruff + pyright + deptry enforced at commit via pre-commit. CI runs the same
+  hooks as the single source of truth — no separate lint/format steps in CI.
+- **Containerization**: Two-stage Docker build. Final stage strips pip/setuptools/wheel (eliminates
+  their CVE surface). Non-root user uid 1001. Uvicorn entrypoint is `chatty.main:socketio_app`, not
+  `chatty.main:app` — the SocketIO ASGI wrapper must intercept WebSocket upgrades before FastAPI
+  middleware.
+- **Security posture**: Three-layer DevSecOps — shift-left (gitleaks, ruff, terraform fmt), CI gates
+  (Trivy IaC + image, pip-audit), CD gates (planned: cosign, SLSA provenance). All GHA steps pinned
+  to full commit SHAs.
+- **Auth**: Deferred to the ALB layer (authenticate-cognito/oidc). Application handles authorization
+  only, via FastAPI `Depends`.
+- **Infrastructure**: Terraform skeleton covers networking → alb + rds → ecs. VPC endpoints
+  eliminate NAT Gateway charges. ECR IMMUTABLE tags + ECS circuit breaker enable safe rolling
+  deploys and one-command rollback.
+- **Database**: Alembic migration infrastructure in place; schema ownership still with `create_all`
+  at startup, ready for the first real migration.
+- **Observability**: structlog (JSON structured logging + request_id) is layer one. OTel tracing is
+  layer two — deferred until an observability backend is chosen; approach documented below.
 
-______________________________________________________________________
+**Key trade-offs:**
 
-## Migrate Poetry → uv
+- SQLite is the default for bare local runs (`uv run python run.py` without a `.env`);
+  docker-compose and Terraform both provision Postgres, wired via `DATABASE_URL`.
+- Docker base images pinned by tag, not digest — digest pinning without Renovate trades a small risk
+  for guaranteed staleness; both should be adopted together.
+- Trivy suppresses unfixed CVEs (`--ignore-unfixed`) — glibc CVE-2026-0861 has no available fix.
+  Explicit policy, not an oversight.
+- pip-audit in CI, not pre-commit — advisory database queries are network-dependent; pre-commit
+  should be fast and offline-capable.
+- Rolling deploy over blue/green — ECS circuit breaker provides automatic rollback; blue/green adds
+  operational complexity without improving WebSocket connection drain behavior.
 
-### uv as package manager
+**What was automated:**
 
-uv replaces Poetry for all dependency management and script execution. It is significantly faster,
-has first-class support for PEP 621 `[project]` metadata, and is the direction the Python ecosystem
-is moving. The `app/` directory remains the project root — all uv commands run from there.
+- Linting, formatting, type checking (ruff, pyright) — pre-commit + CI
+- Dependency vulnerability scanning (pip-audit) — CI
+- Container CVE scanning (Trivy image scan) — CI
+- IaC security scanning (Trivy IaC + TFLint) — CI
+- Smoke tests against a full docker-compose stack — CI
 
-### hatchling as build backend
-
-hatchling is the recommended build backend for uv-managed projects with a src layout. It replaces
-`poetry-core`. `[tool.hatch.build.targets.wheel]` with `packages = ["src/chatty"]` preserves the
-existing src layout without changes to any source files.
-
-### requests moved to dev dependencies
-
-`requests` was listed as a production dependency but is only used in `tests_smoke/`. Moved to
-`[dependency-groups] dev` to keep the production install lean.
-
-### ruff and pyright added to dev dependencies
-
-Added now as dev dependencies even though linting and type-checking tasks come later. Having them
-available in the venv immediately allows ad-hoc use and unblocks those tasks without a separate
-dep-add commit.
-
-______________________________________________________________________
-
-## Bump FastAPI + fix deprecations
-
-### Version constraints
-
-All production dependencies now have both lower and upper bounds (e.g. `>=0.115.0,<1`). Lower bounds
-are set to versions that support the patterns we use; upper bounds cap at the next major version to
-prevent silent breaking changes on `uv sync`.
-
-### FastAPI lifespan
-
-`@app.on_event("startup"/"shutdown")` replaced with the `asynccontextmanager` lifespan pattern
-introduced in FastAPI 0.93. Startup runs before `yield`, shutdown after. This is the only supported
-pattern going forward.
-
-### Pydantic v2 migration
-
-- `@validator` → `@field_validator` with `@classmethod` (v2 requirement)
-- Cross-field validation → `@model_validator(mode="after")`
-- `class Config` → `model_config = ConfigDict(...)`
-- `Model.from_orm(obj)` → `Model.model_validate(obj)` (requires `from_attributes=True` in
-  ConfigDict)
-- `import re` moved to module level in all schemas (was inline inside validators)
-
-### SQLAlchemy 2.0
-
-`sqlalchemy.ext.declarative.declarative_base` → `sqlalchemy.orm.declarative_base` (the ext path was
-deprecated in SQLAlchemy 1.4, removed in 2.0).
-
-### datetime.utcnow()
-
-Replaced with `datetime.now(UTC)` throughout. `utcnow()` is deprecated in Python 3.12 and returns a
-naive datetime; `now(UTC)` returns a timezone-aware datetime.
+**AI use:** Claude Code (claude-sonnet-4-6) used as a pair-programming assistant throughout. All
+changes reviewed and approved before commit. See [AI Use](#ai-use) at the end.
 
 ______________________________________________________________________
 
-## pre-commit hooks
-
-### Shift-left enforcement via pre-commit
-
-Linting, formatting, type checking, and import validation are enforced at commit time via pre-commit
-hooks, managed as a uv dev dependency. No manual installation required — `uv sync` installs it,
-`uv run pre-commit install` wires the git hooks. CI will run `uv run pre-commit run --all-files` as
-the single source of truth, eliminating duplication between local and CI check definitions.
-
-### Hook selection
-
-- `ruff` + `ruff-format`: single tool replaces flake8, isort, and black. `--fix` auto-corrects safe
-  issues before commit.
-- `pyproject-fmt`: enforces consistent ordering and formatting in `pyproject.toml`, which reviewers
-  will read carefully.
-- `uv-lock`: keeps `uv.lock` in sync automatically when `pyproject.toml` changes.
-- `deptry`: catches imports not declared as dependencies. Particularly relevant since `requests` was
-  moved from prod to dev.
-- `pyright`: static type checking via uv-managed pyright, keeping it in sync with the dev
-  environment.
-- `trailing-whitespace` + `end-of-file-fixer`: enforced once on first run, causing a bulk whitespace
-  fix across the codebase. Cosmetic churn up front, but eliminates it permanently going forward —
-  consistent enforcement keeps diffs meaningful.
-
-### deptry suppressions
-
-- `uvicorn` (DEP002): declared as production dep but invoked via CLI, not imported. Legitimate
-  runtime dependency.
-- `starlette` (DEP003): imported directly in middleware but is a transitive dep of FastAPI.
-  Intentional — FastAPI exposes starlette as a first-class surface.
-
-### Pyright fixes surfaced
-
-Pre-commit revealed real type bugs in the existing codebase: `Optional[str]` parameters typed as
-`str`, `request.client` nullable access, SQLAlchemy Column assignment. All fixed as part of this
-task.
+## Part 1: Implemented
 
 ______________________________________________________________________
 
-## GitHub Actions CI
+### Python Application
 
-### pre-commit as the single CI gate
+#### Package management
 
-CI runs `uv --project app run pre-commit run --all-files` as the sole lint/format/typecheck step. No
-separate ruff or pyright steps — pre-commit owns those entirely, eliminating any drift between local
-and CI check definitions.
+uv replaces Poetry — significantly faster, first-class PEP 621 `[project]` metadata support, and the
+direction the Python ecosystem is moving. All uv commands run from `app/` (the project root).
 
-### uv cache via actions/cache
+hatchling replaces `poetry-core` as the build backend. `[tool.hatch.build.targets.wheel]` with
+`packages = ["src/chatty"]` preserves the src layout without touching any source files.
 
-The uv cache directory (from `setup-uv` outputs) is cached keyed on `app/uv.lock`. This avoids
-re-downloading packages on every run while ensuring the cache is invalidated when dependencies
-change.
+`requests` was moved from production to dev dependencies — it is only used in `tests_smoke/`. All
+production dependencies have lower and upper bounds (e.g. `>=0.115.0,<1`) to prevent silent breaking
+changes on `uv sync`.
 
-### Fail-fast ordering
+#### Library upgrades and deprecation fixes
 
-pre-commit runs before pytest. Fast feedback on style/type issues without waiting for the test
-suite.
+FastAPI was bumped to current. Breaking changes addressed:
 
-______________________________________________________________________
+- `@app.on_event("startup"/"shutdown")` → `asynccontextmanager` lifespan pattern (FastAPI 0.93+)
+- Pydantic v2: `@validator` → `@field_validator` with `@classmethod`; `class Config` →
+  `model_config = ConfigDict(...)`; `Model.from_orm()` → `Model.model_validate()` (requires
+  `from_attributes=True`)
+- SQLAlchemy 2.0: `sqlalchemy.ext.declarative.declarative_base` → `sqlalchemy.orm.declarative_base`
+- `datetime.utcnow()` → `datetime.now(UTC)` — `utcnow()` is deprecated in Python 3.12 and returns a
+  naive datetime
 
-## Config / env var management
+`Base.metadata.drop_all` in `main.py` was active in the initial commit, nuking the DB on every
+restart. Commented out immediately to prevent data loss beyond solo local iteration.
 
-### 12-factor App configuration
+#### Configuration management
 
-All application configuration is injected via environment variables, following
-[12-factor App](https://12factor.net/config) principle III. No config values are hardcoded in
-source. `pydantic-settings` reads from the environment (with `.env` file fallback for local dev),
-validates types, and exposes a singleton `settings` object imported wherever config is needed.
-`.env.example` is the public contract for required variables — `.env` is gitignored.
+All configuration is injected via environment variables following
+[12-factor App](https://12factor.net/config) principle III. `pydantic-settings` reads from the
+environment (with `.env` file fallback for local dev), validates types, and exposes a singleton
+`settings` object. `.env.example` is the public contract; `.env` is gitignored.
 
-### Singleton settings object
+`APP_ENV` drives logging verbosity: `_is_production()` delegates to
+`settings.APP_ENV == "production"` — DEBUG in development, INFO in production, no code changes
+required to switch environments.
 
-`config.py` exports `settings = Settings()` at module level. This is imported directly rather than
-passed as a dependency, since these are process-level constants that don't vary per-request. Avoids
-threading concerns and keeps callsites clean.
+#### API surface
 
-### APP_ENV drives logging verbosity
+**CORS**: FastAPI's `CORSMiddleware` handles HTTP CORS; SocketIO's `cors_allowed_origins` handles
+the WebSocket upgrade independently — FastAPI middleware does not intercept WebSocket handshakes.
+Both are wired to `settings.CORS_ORIGINS`, a single source of truth that prevents drift.
 
-`_is_production()` in `logging.py` now delegates to `settings.APP_ENV == "production"` rather than
-hardcoding `False`. DEBUG logging in development, INFO in production — no code changes required to
-switch environments.
+**`/ready` readiness endpoint**: Returns `{"status": "ok", "checks": {"api": "ok", "db": "ok"}}`.
+The `checks` dict is `dict[str, str]` — extensible without a schema change. Degraded state returns
+HTTP 503 so orchestrators remove the instance from the load balancer without restarting it. The DB
+check issues a `SELECT 1` — cheap enough for a 10s probe interval. `/ready` is intentionally
+distinct from the existing `/health/` liveness probe; both live on the same router with no changes
+to `main.py`.
 
-______________________________________________________________________
+**request_id middleware**: A UUID4 `request_id` is generated per request, bound via
+`structlog.contextvars.bind_contextvars()` — automatically included in every downstream log call
+with no changes to existing callsites. Written to the `X-Request-ID` response header for client-
+side correlation. `clear_contextvars()` runs after the response to prevent leakage across requests
+on the same worker.
 
-## CORS
-
-### Dual CORS configuration
-
-FastAPI's `CORSMiddleware` handles HTTP request CORS (see
-[FastAPI CORS docs](https://fastapi.tiangolo.com/tutorial/cors/#use-corsmiddleware)). SocketIO
-handles WebSocket upgrade CORS independently via its own `cors_allowed_origins` parameter — FastAPI
-middleware does not intercept the WebSocket handshake. Both are wired to `settings.CORS_ORIGINS` so
-there is a single source of truth and they cannot drift apart. A comment in `main.py` documents this
-coupling explicitly.
-
-### CORS_ORIGINS from environment
-
-`CORS_ORIGINS` is a `list[str]` in `Settings`, populated from the environment. In production, set
-`CORS_ORIGINS=["https://your-frontend.com"]`. Defaults to `["http://localhost:3000"]` for local
-development.
-
-______________________________________________________________________
-
-## /ready readiness endpoint
-
-### Separate route from /health/
-
-`GET /ready` is added to the existing `APIRouter` in `health.py` — no new router, no changes to
-`main.py`. The existing `/health/` route and its `HealthResponse` model are untouched. Readiness and
-liveness are intentionally distinct: `/health/` is a liveness probe (is the process alive?);
-`/ready` is a readiness probe (is the API ready to serve traffic?). Keeping them on the same router
-avoids router proliferation while maintaining the semantic distinction.
-
-### ReadyResponse shape and DB check
-
-Returns `{"status": "ok", "checks": {"api": "ok", "db": "ok"}}`. The `checks` dict is a
-`dict[str, str]` — extensible to future dependency checks without a schema change. If any check
-fails the top-level status is `"degraded"` and the endpoint returns HTTP 503, so orchestrators
-remove the instance from the load balancer without restarting it. The DB check issues a `SELECT 1`
-via `SessionLocal` — cheap enough for a 10s probe interval and sufficient to detect a broken
-connection.
+**OpenAPI spec**: FastAPI serves the spec at runtime (`/docs`, `/openapi.json`). A static export
+adds value for API Gateway import or SDK generation — not relevant at this stage, not implemented.
 
 ______________________________________________________________________
 
-## request_id logging middleware
+### Developer Experience
 
-### UUID4 per request, bound to structlog contextvars
+#### pre-commit hooks
 
-A UUID4 `request_id` is generated at the top of `LoggingMiddleware.dispatch()` and bound via
-`structlog.contextvars.bind_contextvars()`. structlog's `merge_contextvars` processor is already in
-the chain, so every log call within the request — including those in routers and services — emits
-`request_id` automatically with no changes to existing callsites.
+Linting, formatting, type checking, and import validation enforced at commit time.
+`uv run pre-commit install` wires the hooks; CI runs
+`uv --project app run pre-commit run --all-files` as the single source of truth — no separate ruff
+or pyright steps in CI.
 
-### X-Request-ID response header
+Hooks:
 
-`request_id` is written to `response.headers["X-Request-ID"]` before returning, making it available
-to API clients for distributed tracing and support correlation.
+- **ruff + ruff-format** — replaces flake8, isort, and black; `--fix` auto-corrects safe issues
+- **pyright** — static type checking via uv-managed pyright; surfaced real bugs in the existing
+  codebase (nullable `request.client` access, SQLAlchemy Column assignment)
+- **deptry** — catches undeclared imports (`uvicorn` suppressed as DEP002 — CLI dep; `starlette` as
+  DEP003 — intentional transitive dep of FastAPI)
+- **pyproject-fmt** — enforces consistent ordering in `pyproject.toml`
+- **uv-lock** — keeps `uv.lock` in sync when `pyproject.toml` changes
+- **gitleaks** — scans staged files for secrets patterns, repo-wide
+- **terraform fmt** — HCL formatting enforced at commit time, same layer as Python formatting
+- **trailing-whitespace + end-of-file-fixer** — one-time bulk fix; eliminated permanently going
+  forward, keeping diffs meaningful
 
-### clear_contextvars after response
+#### Justfile
 
-`structlog.contextvars.clear_contextvars()` is called after the header is set. This prevents
-`request_id` from leaking into subsequent requests on the same worker thread.
+`just` is a command runner (not a build system) — no implicit dependency tracking, no DAG, no
+stale-file logic, no tab-sensitive syntax. That makes it predictable: `just dev` always runs dev.
 
-______________________________________________________________________
-
-## Multi-stage Dockerfile
-
-### Two-stage build: builder + final
-
-The builder stage installs Python dependencies into `/build/.venv` using
-`uv sync --frozen --no-dev`. The final stage copies only the venv and application source — no build
-tooling, no uv, no lock files — keeping the runtime image lean.
-
-### --no-install-project in builder
-
-`uv sync --no-install-project` installs only dependencies, not the chatty package itself. The source
-is copied to `/app/src/` in the final stage and made importable via `PYTHONPATH=/app/src`. This
-means changes to application source do not invalidate the dependency cache layer, keeping iterative
-builds fast.
-
-### CMD targets socketio_app, not app
-
-`chatty.main:socketio_app` is the uvicorn entrypoint, not `chatty.main:app`. `socketio.ASGIApp`
-intercepts WebSocket upgrade requests at the raw ASGI level before they reach FastAPI's
-`BaseHTTPMiddleware` stack. `BaseHTTPMiddleware` does not support WebSocket protocol upgrades, so
-using `app` as the entrypoint causes SocketIO connections to fail silently.
-
-### Non-root user (uid 1001)
-
-The container runs as a dedicated non-root user created with `useradd --uid 1001`. No home directory
-or login shell is created — the user exists solely to drop privileges at runtime.
-
-### Image pinning
-
-Base images are pinned by tag (`python:3.11-slim`, `uv:0.10.9`). Digest SHA pinning
-(`python:3.11-slim@sha256:...`) would eliminate tag mutability but requires an automated update
-mechanism — pinning without one trades a small risk for a guaranteed staleness problem. The correct
-pairing is digest pinning + Renovate. That is a reasonable next step for a production deployment but
-out of scope here.
-
-### .dockerignore
-
-`.git`, `__pycache__`, `.env`, `.venv`, test directories, and `*.db` are excluded. This prevents
-secrets, local state, and test fixtures from entering the build context or the image.
+Recipes: `dev`, `test`, `build`, `up`, `down`. No `lint` or `typecheck` recipes — pre-commit is the
+single source of truth for those; duplicating invocation paths risks drift between local and CI
+behavior.
 
 ______________________________________________________________________
 
-## OpenAPI spec export
+### Containerization
 
-FastAPI generates and serves the OpenAPI spec at runtime (`/openapi.json`, `/docs`). A static export
-script adds value for specific tooling — API Gateway import, SDK generation, committing the spec to
-version control for PR diffs — but none of those workflows are relevant at this stage. Not
-implemented; not a gap worth discussing in the interview.
+#### Multi-stage Dockerfile
 
-______________________________________________________________________
+Two stages: **builder** (`ghcr.io/astral-sh/uv:0.10.9`) runs
+`uv sync --frozen --no-dev --no-install-project` into `/build/.venv`; **final** (`python:3.11-slim`)
+copies only the venv and `app/src/`.
 
-## Alembic skeleton
+`--no-install-project` means source changes do not invalidate the dependency cache layer, keeping
+iterative builds fast.
 
-### Alembic as dev dependency
+The final stage removes pip, setuptools, and wheel
+(`python -m pip uninstall -y pip setuptools wheel`) — not needed at runtime and carry CVE surface
+area. `PYTHONDONTWRITEBYTECODE=1` and `PYTHONUNBUFFERED=1` are set for container hygiene.
 
-Alembic is a dev dependency at this stage because migrations are run as a deployment step, not
-inside the app container. In production the CD pipeline runs `alembic upgrade head` against the
-database before the ECS service update rolls — this can be done from a separate migration task
-definition or a one-off ECS task using the same image with alembic installed. If a single image
-needs to serve both roles, alembic moves to production dependencies.
+The container runs as non-root (uid 1001, no login shell, no home directory). Base images are pinned
+by tag; digest pinning would eliminate tag mutability but requires Renovate to avoid guaranteed
+staleness — both should be adopted together.
 
-### sqlalchemy.url intentionally absent from alembic.ini
+CMD targets `chatty.main:socketio_app`, not `chatty.main:app`. `socketio.ASGIApp` intercepts
+WebSocket upgrades at the raw ASGI level before `BaseHTTPMiddleware` sees the request.
+`BaseHTTPMiddleware` does not support WebSocket protocol upgrades; using `app` as the entrypoint
+causes SocketIO connections to fail silently.
 
-Credentials must never live in a config file committed to version control. `env.py` reads
-`DATABASE_URL` from `settings` (pydantic-settings), which sources it from the environment. The
-`alembic.ini` has a comment marking the absence as intentional, not accidental.
-
-### Baseline migration
-
-`0001_baseline.py` is an empty migration — no schema changes. Its purpose is to establish a
-migration history starting point so that future `alembic revision --autogenerate` migrations have a
-parent revision and `alembic upgrade head` has somewhere to start from. The existing tables are
-currently created by `Base.metadata.create_all()` at app startup; the migration history will take
-over schema ownership once the first real schema migration is written.
+`.dockerignore` excludes `.git`, `__pycache__`, `.env`, `.venv`, test directories, and `*.db`.
 
 ______________________________________________________________________
 
-## Smoke tests in CI
+### Database
 
-Smoke tests exercise the full running stack — HTTP endpoints and SocketIO — against a live server
-with a real Postgres database. They live in `app/tests_smoke/` and were previously run manually
-only.
+#### Alembic skeleton
 
-A dedicated `smoke-test` job was added to `ci.yml` that runs after the `ci` job (pre-commit + unit
-tests) passes. It uses `docker compose up -d --wait`, which blocks until both `db` and `app`
+Alembic is a dev dependency at this stage — migrations run as a deployment step, not inside the app
+container. The CD pipeline would run `alembic upgrade head` from a one-off ECS task before the
+service update rolls.
+
+`sqlalchemy.url` is intentionally absent from `alembic.ini` — credentials must never live in a
+committed config file. `env.py` reads `DATABASE_URL` from `settings`.
+
+`0001_baseline.py` is an empty migration. Its purpose is to establish a migration history starting
+point so future `alembic revision --autogenerate` migrations have a parent revision. The existing
+tables are created by `Base.metadata.create_all()` at startup; the migration history takes over
+schema ownership once the first real schema migration is written.
+
+______________________________________________________________________
+
+### CI Pipeline
+
+#### GitHub Actions structure
+
+Three jobs:
+
+- **`ci`** — `uv sync` → pre-commit → pip-audit → pytest
+- **`terraform-security`** — TFLint + Trivy IaC scan (runs in parallel with `ci`)
+- **`smoke-test`** — depends on `ci`; docker build → Trivy image scan → docker compose up --wait →
+  pytest tests_smoke/
+
+pre-commit runs before pytest (fail-fast on style/type issues). The uv cache is keyed on
+`app/uv.lock`.
+
+All `uses:` entries are pinned to full commit SHAs with inline version tag comments (e.g.
+`actions/checkout@34e114876b...  # v4`). Mutable version tags are a supply chain risk — if an
+upstream action repository is compromised and a tag is moved, the next CI run executes
+attacker-controlled code with full access to repository secrets. SHA pinning eliminates this vector;
+when Renovate is wired it handles SHA bump PRs automatically.
+
+#### pip-audit
+
+`pip-audit` checks all installed packages against the PyPA advisory database and OSV. It runs in the
+`ci` job after `uv sync`, before tests. A failed audit means a known CVE in the dependency tree; the
+build should stop.
+
+pre-commit is not the right layer: pip-audit makes network calls to query advisory databases and
+operates on the resolved dependency graph, not source files. Pre-commit should be fast and
+offline-capable.
+
+#### Trivy image scan
+
+The `smoke-test` job builds the image explicitly (`docker build -t chatty:latest .`) then runs Trivy
+before `docker compose up`. If the image contains a known HIGH or CRITICAL CVE, CI fails before the
+container ever starts.
+
+`docker-compose.yml` specifies `image: chatty:latest` so compose uses the already-built, already-
+scanned image rather than rebuilding — the scanned artifact is exactly what runs in smoke tests.
+
+`--ignore-unfixed: true` suppresses findings with no available remediation (currently glibc
+CVE-2026-0861). Blocking on unfixable CVEs generates noise with no actionable remediation path.
+Explicit policy, not an oversight.
+
+This scan is distinct from the `terraform-security` job's IaC scan — image scan checks OS packages
+and language runtime dependencies inside the container; IaC scan checks Terraform HCL for
+misconfigurations.
+
+#### Smoke tests
+
+The `smoke-test` job exercises the full running stack — HTTP endpoints and SocketIO — against a live
+server with a real Postgres database. `docker compose up -d --wait` blocks until both `db` and `app`
 healthchecks pass before handing off to pytest. The app healthcheck polls `/health/ready`, which
-already performs a live DB query — so a passing healthcheck means the full stack is wired correctly
-before a single smoke test runs.
+already performs a live DB query — a passing healthcheck means the full stack is correctly wired
+before a single test runs.
 
-The job tears down with `docker compose down -v` (always, even on failure) to keep runners clean.
-
-Sequencing `smoke-test` after `ci` avoids burning Docker build time when linting or unit tests are
+Teardown runs `docker compose down -v` unconditionally (`if: always()`) to keep runners clean. The
+job runs only after `ci` passes — no point burning Docker build time when linting or unit tests are
 already failing.
 
 ______________________________________________________________________
 
-## Terraform skeleton
+### Infrastructure (Terraform)
 
-### Module structure
+#### Module structure and state backend
 
-Modules are split by concern (`networking`, `alb`, `ecs`, `rds`) and consumed by environment
-directories (`environments/dev`, `environments/staging`, `environments/prod`). The environment
-directories contain `main.tf`, `variables.tf`, and `outputs.tf` that are structurally identical
-across all three environments. Only `backend.hcl` (state key) and `terraform.tfvars` (sizing,
-toggles) differ per environment. This makes the configuration DRY without Terragrunt — the
-environments ARE the parameters.
+Modules split by concern (`networking`, `alb`, `ecs`, `rds`), consumed by environment directories
+(`dev`, `staging`, `prod`). Environments share identical structure; only `backend.hcl` (state key)
+and `terraform.tfvars` (sizing, toggles) differ. DRY without Terragrunt — the environment IS the
+parameter.
 
-### State backend bootstrap
-
-A `bootstrap/` directory provisions the S3 bucket (versioned, KMS-encrypted) and DynamoDB table (for
-state locking) before any environment is applied. This is run once per AWS account. State files are
-isolated per environment: `chatty/dev/terraform.tfstate`, `chatty/staging/terraform.tfstate`,
-`chatty/prod/terraform.tfstate`. Partial backend configuration (`backend "s3" {}` in `main.tf` +
-`backend.hcl` passed at init) keeps bucket names and account IDs out of committed `.tf` files.
-
-### Dependency graph and provisioning order
-
-The explicit module dependency chain is visible in `environments/*/main.tf`:
+Explicit dependency chain:
 
 ```
 networking                         (no dependencies)
     ├── alb      ← networking      (VPC + public subnets + ALB SG)
     ├── rds      ← networking      (VPC + data subnets + RDS SG)       [optional]
     └── ecs      ← networking      (VPC + private subnets + app SG)
-                 ← alb             (target_group_arn, alb_arn_suffix)
+                 ← alb             (target_group_arn)
                  ← rds             (database_url_secret_arn)            [optional]
 ```
 
 Provisioning order: `networking` → `alb` + `rds` (parallel) → `ecs`.
 
-### RDS optional pattern
+A `bootstrap/` directory provisions the S3 bucket (versioned, KMS-encrypted) and DynamoDB table for
+state locking before any environment is applied. Partial backend configuration (`backend "s3" {}` +
+`backend.hcl` at init) keeps bucket names and account IDs out of committed `.tf` files. State is
+isolated per environment.
 
-`create_rds = false` in dev tfvars, `true` in staging/prod. The environment uses
-`count = var.create_rds ? 1 : 0` on the RDS module call. When disabled,
-`local.database_url_secret_arn` resolves to an empty string and the ECS module skips secret
-injection. The DATABASE_URL is provided via another mechanism (docker compose locally, or a
-pre-existing secret in shared dev environments).
+`create_rds = false` in dev, `true` in staging/prod. `count = var.create_rds ? 1 : 0` on the RDS
+module call — when disabled, `local.database_url_secret_arn` resolves to empty string and ECS skips
+secret injection.
 
-### Key design decisions
+#### Key design decisions
 
-- `image_tag_mutability = "IMMUTABLE"` on ECR: every deployment must use a new git SHA tag; prevents
-  the `latest` anti-pattern where two tasks run different code under the same tag.
-- `deployment_circuit_breaker { rollback = true }`: ECS automatically rolls back to the previous
-  task definition if the new deployment fails to reach steady state.
-- `lifecycle.ignore_changes = [desired_count]` on ECS service: auto-scaling owns desired_count after
-  first deploy; Terraform reconciling it would fight the scaler.
-- `enable_deletion_protection = var.environment == "prod"` on ALB: conditional expression
-  demonstrates environment-aware resource configuration without duplicating resource definitions.
-- `check` blocks: post-apply assertions (Terraform 1.5+) verify ALB DNS and ECR URL are non-empty
-  after apply — catches partial failures that don't error at the resource level.
-- VPC endpoints for ECR, Secrets Manager, and CloudWatch Logs: eliminates NAT Gateway charges for
-  AWS-internal API traffic, which is the largest hidden cost in Fargate deployments.
-- Dual auto-scaling policies (CPU + ALBRequestCountPerTarget): CPU handles compute-bound load,
-  request count handles I/O-bound spikes typical of WebSocket/chat workloads.
+- **ECR `image_tag_mutability = "IMMUTABLE"`** — every deployment requires a new git SHA tag;
+  prevents the `:latest` anti-pattern where two tasks run different code under the same tag.
+- **`deployment_circuit_breaker { rollback = true }`** — ECS automatically rolls back to the
+  previous task definition if new tasks fail their healthcheck within the deployment window.
+- **`lifecycle.ignore_changes = [desired_count]`** on ECS service — auto-scaling owns
+  `desired_count` after first deploy; Terraform reconciling it would fight the scaler.
+- **`enable_deletion_protection = var.environment == "prod"`** — conditional expression demonstrates
+  environment-aware config without duplicating resource definitions.
+- **`check` blocks (Terraform 1.5+)** — post-apply assertions verify ALB DNS and ECR URL are
+  non-empty, catching partial failures that don't error at the resource level.
+- **VPC endpoints** (ECR, Secrets Manager, CloudWatch Logs) — routes AWS-internal traffic on the AWS
+  backbone, bypassing the NAT Gateway. NAT data processing ($0.045/GB) is the largest hidden cost in
+  Fargate deployments; interface endpoints ($0.01/hr + $0.01/GB) are materially cheaper for
+  high-frequency AWS API calls.
+- **Dual auto-scaling policies** (CPU 70% + ALBRequestCountPerTarget 1,000 req/target) — CPU handles
+  compute-bound load; request count handles high-connection, low-CPU WebSocket workloads.
 
-### OpenTofu
+#### DevSecOps tooling
 
-HashiCorp changed the Terraform license to BSL in 2023. OpenTofu is the CNCF-hosted open-source fork
-with identical HCL syntax. Enterprise adoption is growing; all HCL in this skeleton is compatible
-with OpenTofu without modification.
+Pre-commit: `terraform fmt` at commit time. CI `terraform-security` job: TFLint with AWS ruleset
+(`--recursive`, `--minimum-failure-severity=error`) + Trivy IaC scan (HIGH/CRITICAL block).
 
-### DevSecOps tooling
+`terraform validate` is not wired to pre-commit — it requires `terraform init` with a valid backend,
+which is impractical for the partial backend config used here.
 
-Terraform-specific security and quality tooling is split between pre-commit (fast, shift-left) and
-CI (heavier analysis, controlled environment):
+HashiCorp changed the Terraform license to BSL in 2023. All HCL in this skeleton is compatible with
+OpenTofu (the CNCF-hosted open-source fork) without modification.
 
-**Pre-commit (`antonbabenko/pre-commit-terraform`):**
+#### Known limitations
 
-`terraform_fmt` runs `terraform fmt` on staged `.tf` files at commit time. HCL formatting is
-enforced at the same layer as Python formatting (ruff-format) — malformed HCL never enters the repo.
-Requires `terraform` on the developer's PATH, which is already a prerequisite for working with the
-codebase.
-
-**Pre-commit (`gitleaks`):**
-
-Gitleaks scans all staged files for secrets patterns before they enter the repo. Catches API keys,
-connection strings, and private keys that accidentally appear in `.tf` files, `.tfvars`, or anywhere
-else in the tree. Applied repo-wide, not just to Terraform — a single hook covers all languages and
-file types.
-
-**CI — TFLint (`terraform-security` job):**
-
-TFLint runs `--recursive` from the `terraform/` directory with the AWS ruleset plugin enabled
-(`terraform/.tflint.hcl`). The AWS plugin adds ~100+ rules beyond basic HCL syntax: deprecated
-resource arguments, invalid instance types, missing required attributes.
-`--minimum-failure-severity=error` fails the job on errors only, allowing warnings to surface
-without blocking PRs. TFLint plugins are cached keyed on `.tflint.hcl` to avoid re-downloading the
-AWS ruleset on every run.
-
-**CI — Trivy IaC scan (`terraform-security` job):**
-
-Trivy replaced the deprecated `tfsec` tool in 2023 and is now the standard for IaC security
-scanning. It checks Terraform for security misconfigurations: overly permissive security groups,
-unencrypted storage, missing logging, public accessibility on resources that should be private. The
-scan fails on `HIGH` and `CRITICAL` severity findings only — `LOW` and `MEDIUM` surface as warnings
-to allow informed triage without blocking every PR. The `terraform-security` job runs in parallel
-with the `ci` job; both must pass before merge.
-
-**What is not scanned:**
-
-`terraform validate` is not wired to pre-commit because it requires `terraform init` with a valid
-backend, which is impractical for the partial backend config used here. Validate runs manually and
-is enforced by convention. Infracost (cloud cost estimation) is a useful addition for production PRs
-but requires an API key and organizational context; not added here.
-
-### Known limitations and scaling path
-
-This skeleton is intentionally scoped to what a single-team deployment needs on day one. The
-following shortcomings are real; each has a documented mitigation path.
-
-**Relative module paths, no module registry**
-
-All `source = "../../modules/..."` paths tightly couple environments to the monorepo layout. Works
-fine for a single repo today. As the platform grows (multiple services sharing the same
-networking/ECS patterns), the modules should be versioned, tagged, and published to a private
-Terraform module registry (Terraform Cloud, or a git tag reference like
-`source = "git::ssh://github.com/org/tf-modules.git//networking?ref=v1.4.0"`). This decouples module
-versions from application deploys and enables independent module upgrades.
-
-**RDS master password in Terraform state**
-
-`random_password.db.result` is stored in state. The state bucket is KMS-encrypted and access-
-controlled, so the risk is contained, but anyone with state read access can extract the plaintext
-password. The modern mitigation is `manage_master_user_password = true` on `aws_db_instance`, which
-delegates credential storage and rotation entirely to Secrets Manager — Terraform never sees the
-password. Migration path: add `manage_master_user_password = true`, import the new secret ARN, and
-remove the `random_password` and `aws_secretsmanager_secret` resources via a `moved` block + import.
-
-**No secret rotation**
-
-`aws_secretsmanager_secret_rotation` is not configured. Compliance environments (SOC 2, PCI-DSS,
-HIPAA) require automated rotation with a documented rotation period. Mitigation: add a rotation
-Lambda (AWS provides a managed rotation function for RDS) and wire it to the secret via
-`aws_secretsmanager_secret_rotation`. If adopting `manage_master_user_password` above, RDS handles
-rotation natively without a Lambda.
-
-**No Route 53 / DNS wiring**
-
-The ALB outputs a DNS name but no `aws_route53_record` is created; DNS is a manual post-apply step.
-Mitigation: add an `aws_route53_record` in the ALB module (or a dedicated `dns` module) pointing to
-the ALB alias. This also unblocks ACM DNS validation automation. Deliberately omitted here because
-hosted zone IDs are account-specific and would have required hard-coded placeholders.
-
-**No WAF**
-
-No `aws_wafv2_web_acl` is associated with the ALB. Required for production workloads subject to
-OWASP Top 10 exposure or compliance requirements. Mitigation: add a `waf` module with an ALB-scoped
-WebACL using AWS Managed Rule Groups (AWSManagedRulesCommonRuleSet as a baseline). Separate module
-to keep it optional and cost-visible — WAF is billed per rule per million requests.
-
-**No CloudWatch alarms or monitoring module**
-
-The ECS and RDS modules create log groups but no alarms. No SNS topic for paging. In production: ALB
-5xx rate, ECS task CPU/memory, RDS connections and IOPS, and auto-scaling activity should all
-trigger alarms. Mitigation: add a `monitoring` module that accepts resource names/ARNs as inputs and
-creates a CloudWatch dashboard, composite alarm, and SNS topic. Keep it a separate optional module
-so dev doesn't pay for CloudWatch alarms it doesn't need.
-
-**No KMS on CloudWatch log groups**
-
-CloudWatch log groups use default AWS-managed encryption. Customer-managed KMS keys are required for
-compliance workloads where logs may contain PII. Mitigation: pass a `log_kms_key_arn` variable to
-the ECS and RDS modules and wire it to `aws_cloudwatch_log_group.kms_key_id`. Omitted here because
-the key ARN is account-specific.
-
-**ECR per environment, not per account**
-
-ECR repositories live inside the ECS module, one per environment. Enterprise pattern is a dedicated
-shared ECR account (via AWS Organizations) with cross-account pull permissions granted to each
-workload account. This centralizes image scanning, lifecycle policies, and replication
-configuration. Mitigation path: extract ECR into its own module with an optional
-`cross_account_pull_arns` variable and remove it from the ECS module. Acceptable as-is for a
-single-account deployment.
-
-**Environment directories are structural copies**
-
-`dev/`, `staging/`, and `prod/` share identical `main.tf`, `variables.tf`, and `outputs.tf`. Any
-structural change must be made in three places. The environment IS the parameter (intentional), but
-at scale this becomes a maintenance burden. Two native options in 2026: (a) **Terraform Stacks**
-(HCP Terraform) — HashiCorp's first-party answer, using `.tfstack.hcl` + `.tfdeploy.hcl` to deploy
-one configuration across multiple environments without duplication, but requires Terraform Cloud/
-Enterprise; (b) **Terragrunt** — the long-standing open-source wrapper, a `terragrunt.hcl` with a
-single `terraform { source }` block eliminates the structural copies and works with any state
-backend. For teams not on HCP Terraform, Terragrunt remains the most widely adopted solution beyond
-~4 environments.
-
-**No multi-region failover**
-
-All resources are deployed to a single region specified in `terraform.tfvars`. VPC endpoint service
-names are correctly parameterized via `data.aws_region.current.name`, so the modules are
-region-agnostic. Active-passive failover would require a second environment directory (e.g.
-`environments/prod-eu`), Route 53 health checks, and a Global Accelerator or CloudFront origin
-failover policy. Out of scope for a chat backend at this maturity; worth noting before a contractual
-SLA is signed.
-
-## Justfile
-
-### just as the task runner
-
-`just` is a command runner (not a build system) — no implicit dependency tracking, no DAG, no
-stale-file logic. That makes it predictable: `just dev` always runs dev, `just test` always runs
-tests. Makefiles carry GNU Make semantics (targets as files, phony declarations, tab-sensitive
-syntax) that add complexity for no benefit in a Python project.
-
-Recipes defined: `dev` (hot-reload via `run.py`), `test` (`pytest -W ignore`), `build` (docker image
-tagged `chatty:latest`), `up` (`docker compose up -d --wait`), `down` (`docker compose down -v`).
-
-No `lint` or `typecheck` recipes — pre-commit is the single source of truth for those. Running them
-through `just` would duplicate invocation paths and risk drift between local and CI behavior.
+- **Relative module paths** — `source = "../../modules/..."` couples environments to the monorepo
+  layout. Mitigation: version and publish modules to a private Terraform module registry or
+  reference via git tags.
+- **RDS master password in state** — `random_password.db.result` stored in KMS-encrypted state.
+  Mitigation: `manage_master_user_password = true` on `aws_db_instance` delegates credential storage
+  and rotation to Secrets Manager — Terraform never sees the password.
+- **No secret rotation** — `aws_secretsmanager_secret_rotation` not configured. Compliance
+  environments require automated rotation; `manage_master_user_password` handles this natively.
+- **No Route 53 / DNS wiring** — ALB outputs a DNS name; DNS is a manual post-apply step. Omitted
+  because hosted zone IDs are account-specific.
+- **No WAF** — no `aws_wafv2_web_acl` on the ALB. Required for production OWASP Top 10 exposure; an
+  optional `waf` module with AWS Managed Rule Groups is the mitigation path.
+- **No CloudWatch alarms** — log groups are created but no alarms or SNS topic. An optional
+  `monitoring` module is the mitigation path.
+- **ECR per environment, not per account** — enterprise pattern is a shared ECR account with
+  cross-account pull permissions. Acceptable as-is for single-account deployment.
+- **Environment directories are structural copies** — any structural change to `main.tf` must be
+  made in three places. Long-term mitigation: Terraform Stacks (HCP Terraform) or Terragrunt.
+- **No multi-region failover** — modules are region-agnostic (VPC endpoint names parameterized via
+  `data.aws_region.current.name`); active-passive failover would require a second environment
+  directory and Route 53 health checks.
 
 ______________________________________________________________________
 
-## pip-audit
-
-### Dependency vulnerability scanning in CI
-
-`pip-audit` checks all installed packages against the Python Packaging Advisory Database (PyPA) and
-OSV. It runs in the `ci` job after `uv sync`, before tests — a failed audit means a known CVE in the
-dependency tree, which should block the build.
-
-Pre-commit is not the right layer for this: `pip-audit` makes network calls to query advisory
-databases and operates on the resolved dependency graph, not source files. Running it in CI keeps
-the pre-commit hook list fast and offline-capable.
-
-`pip-audit` is added as a dev dependency so it is pinned in `uv.lock` and the CI environment matches
-local invocations exactly.
-
-______________________________________________________________________
-
-## Trivy image scan
-
-### Container CVE scanning in CI
-
-The `smoke-test` job builds the image explicitly (`docker build -t chatty:latest .`) before running
-`docker compose up`. Trivy scans `chatty:latest` between those two steps — if the image contains a
-known HIGH or CRITICAL CVE, CI fails before the container ever starts.
-
-Adding `image: chatty:latest` to the `app` service in `docker-compose.yml` ensures compose uses the
-already-built and scanned image rather than rebuilding from scratch, so the scanned artifact is
-exactly what runs in the smoke tests.
-
-This scan is distinct from the IaC scan in the `terraform-security` job (which scans Terraform HCL
-for misconfigurations). The image scan checks OS packages and language runtime dependencies inside
-the container for known vulnerabilities.
-
-______________________________________________________________________
-
-______________________________________________________________________
-
-## Design decisions (not yet implemented in code)
+## Part 2: Designed (not yet implemented)
 
 > The following sections document planned approaches and forward-looking architecture decisions.
-> Nothing below this line is implemented in this repository. These sections are here to facilitate
-> the technical review conversation and to establish a clear direction for production readiness.
+> Nothing below this line is implemented in this repository. These sections exist to facilitate the
+> technical review conversation and establish a direction for production readiness.
 
 ______________________________________________________________________
 
-## Auth/authz approach
+### Auth/authz approach
 
-### JWT verification at the ALB layer
+#### JWT verification at the ALB layer
 
-Authentication is handled at the ALB before requests reach the application. AWS ALB natively
-integrates with Cognito user pools and any OIDC-compliant identity provider. With
-`authenticate-cognito` or `authenticate-oidc` actions on the HTTPS listener, the ALB exchanges the
-authorization code for tokens, validates the JWT signature against the IdP's public keys, and
-forwards the verified claims to the application as `X-Amzn-Oidc-*` headers. Unauthenticated requests
-receive a 401 before they touch application code.
+Authentication is handled at the ALB before requests reach the application. With
+`authenticate-cognito` or `authenticate-oidc` actions on the HTTPS listener, the ALB validates the
+JWT signature against the IdP's public keys and forwards verified claims as `X-Amzn-Oidc-*` headers.
+Unauthenticated requests receive a 401 before touching application code.
 
-This offloads token validation entirely from the application: no JWT library to maintain, no key
-rotation logic, no token parsing in the hot path. The application trusts the headers the ALB injects
-— this is safe because the application is only reachable via the ALB (security group
+This offloads token validation entirely from the application — no JWT library to maintain, no key
+rotation logic. Safe because the application is only reachable via the ALB (security group
 `aws_security_group.app` allows inbound only from `aws_security_group.alb`).
 
-### FastAPI authorization via Depends
-
-Once authentication is handled at the ALB, the application layer handles authorization — _what the
-verified identity is permitted to do_.
-
-The standard pattern is a reusable FastAPI dependency:
+#### FastAPI authorization via Depends
 
 ```python
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header
 
 
 def current_user(
@@ -610,8 +383,8 @@ def current_user(
     x_amzn_oidc_data: str = Header(...),
 ) -> dict:
     """Extract verified claims injected by the ALB."""
-    # ALB has already validated the JWT; parse the payload without re-verification.
     import base64, json
+
     payload = json.loads(base64.b64decode(x_amzn_oidc_data + "=="))
     return payload
 
@@ -620,16 +393,14 @@ async def get_messages(user: dict = Depends(current_user)) -> list[Message]:
     ...
 ```
 
-Role or scope checks are added inside `current_user` or as additional dependencies layered on top.
-This keeps authorization logic co-located with route definitions and testable in isolation by
+Role or scope checks are added inside `current_user` or as additional layered dependencies.
+Authorization logic stays co-located with route definitions and is testable in isolation by
 injecting a fake dependency in tests.
 
-### SocketIO authentication
+#### SocketIO authentication
 
 SocketIO connections authenticate on the initial HTTP upgrade request, which passes through the ALB
-like any other request. The ALB validates the JWT and injects the identity headers before the
-connection is upgraded to WebSocket. The `python-socketio` `AsyncServer` receives the verified
-headers in the `environ` dict in the `connect` event handler:
+like any other request. The `connect` event handler receives the verified headers in `environ`:
 
 ```python
 @sio.event
@@ -640,198 +411,83 @@ async def connect(sid, environ, auth):
     await sio.save_session(sid, {"user": identity})
 ```
 
-### What is not yet wired
-
-- No Cognito user pool or OIDC provider is defined in Terraform.
-- The ALB listener rules do not include `authenticate-cognito` or `authenticate-oidc` actions.
-- No `current_user` dependency exists in the application.
-- Local development uses no authentication; the `.env` pattern would need a flag to bypass the ALB
-  headers for local runs.
+Not yet wired: no Cognito user pool or OIDC provider in Terraform; no ALB listener authenticate
+actions; no `current_user` dependency in the application.
 
 ______________________________________________________________________
 
-## CI/CD approach
+### CI/CD pipeline (deploy job)
 
-### Pipeline design
-
-The deployment pipeline is GitHub Actions → ECR → ECS, using ECS native rolling deployments. No
-CodeDeploy is involved. The full sequence on merge to `main`:
+Full pipeline on merge to `main`:
 
 ```
-1. GHA ci job         — pre-commit (lint/format/typecheck) + pytest
-2. GHA smoke-test     — docker compose up --wait + pytest tests_smoke/
-3. GHA terraform-security — TFLint + Trivy IaC scan
-4. GHA deploy job     — build image → push to ECR → register task def → update ECS service
-                        (deploy job is not yet wired; steps 1–3 are the current CI gate)
+1. ci job              — pre-commit + pip-audit + pytest
+2. terraform-security  — TFLint + Trivy IaC (parallel with ci)
+3. smoke-test          — docker build + Trivy image + docker compose + pytest tests_smoke/
+4. deploy job          — build → ECR push → ECS task def update → ECS service update
+                         (not yet wired; steps 1–3 are the current CI gate)
 ```
 
-Steps 1–3 run in parallel where independent. The deploy job runs only after all three pass, keyed on
-the `main` branch. PRs run steps 1–3 only; no deployment from feature branches.
+The deploy job would use OIDC-based AWS credentials (no long-lived access keys stored in GitHub),
+`aws-actions/amazon-ecs-render-task-definition` to inject the new image into the task definition
+JSON, and `aws-actions/amazon-ecs-deploy-task-definition` to register and deploy with steady-state
+wait.
 
-### Image tagging
+Every image is tagged with the git SHA. ECR IMMUTABLE enforcement means a SHA cannot be overwritten.
+Rolling back is re-deploying the previous SHA tag — `git revert` + merge + CI run = new SHA = clean
+forward rollback. If the circuit breaker fires mid-deployment, ECS restores the previous task
+definition automatically.
 
-Every image is tagged with the git SHA (`${{ github.sha }}`). ECR repositories have
-`image_tag_mutability = "IMMUTABLE"`, so a SHA tag cannot be overwritten. Two practical
-consequences:
-
-- A deployment is always traceable to a specific commit.
-- Rolling back is re-deploying the previous SHA tag — no special rollback tooling needed.
-  `git revert` + merge = new SHA = new image = clean forward rollback.
-
-The `:latest` tag is never used for deployment. It may be pushed as a convenience for local
-`docker pull` but is never referenced in the ECS task definition.
-
-### Rolling deploy vs blue/green
-
-ECS native rolling deploy with `deployment_circuit_breaker { rollback = true }` is used rather than
-CodeDeploy blue/green. Reasoning:
-
-- This service uses persistent WebSocket connections (socket.io). Blue/green creates a parallel task
-  set and shifts ALB traffic via weighted listener rules; existing WebSocket connections are held
-  open on the "blue" tasks until drained regardless of deployment strategy — but blue/green's
-  additional ALB listener on a test port (8080) and the weighted target group setup add operational
-  complexity that does not improve connection draining behavior.
-- The circuit breaker provides the key safety property: if new tasks fail their `/health/ready`
-  health check within the deployment window, ECS automatically rolls back to the previous task
-  definition without human intervention.
-- `deployment_minimum_healthy_percent = 100` prevents capacity reduction: the new task must be
-  healthy before any old task is terminated.
-- Blue/green makes sense when a service needs canary testing with real production traffic before
-  full cutover (e.g., backwards-incompatible API changes, payment processing). That is not the
-  current requirement.
-
-### Rollback
-
-Rolling back is operationally equivalent to a new forward deployment:
-
-```
-git revert <bad-sha>  →  merge to main  →  pipeline builds new image  →  ECS rolls to new SHA
-```
-
-If the circuit breaker fires mid-deployment, ECS restores the previous task definition automatically
-— no manual intervention required. For an urgent hotfix before a revert can be merged, an operator
-can manually update the ECS service desired task definition to the previous SHA tag via the AWS
-console or `aws ecs update-service`.
-
-### What is not yet wired
-
-The `deploy` GitHub Actions job is documented here but not yet implemented. The Terraform skeleton
-provisions all required infrastructure (ECR, ECS cluster, IAM task execution role with ECR pull
-permissions). The deploy job would add:
-
-- `aws-actions/configure-aws-credentials@v4` — OIDC-based credentials (no long-lived access keys)
-- `aws-actions/amazon-ecr-login@v2` — ECR authentication
-- `docker build --tag <ecr-url>:<sha> .` + `docker push`
-- `aws-actions/amazon-ecs-render-task-definition@v1` — inject new image into task definition JSON
-- `aws-actions/amazon-ecs-deploy-task-definition@v2` — register and deploy; waits for steady state
-
-OIDC credentials (GitHub's identity provider registered as an IAM OIDC provider in the AWS account)
-eliminate the need for stored `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` secrets in the GitHub
-repository.
+**Rolling deploy over blue/green**: the circuit breaker provides the key safety property. Blue/
+green adds operational complexity (test port listener, weighted target groups) without improving
+WebSocket connection drain behavior — existing connections are held open on old tasks during the
+drain period regardless of deployment strategy.
 
 ______________________________________________________________________
 
-## Exposing the service to the front end
-
-### ALB + CloudFront topology
-
-The ALB is the single ingress point for the backend. CloudFront sits in front of it for production
-deployments. The recommended topology:
+### Exposing the service to the front end
 
 ```
 Browser → CloudFront → ALB (HTTPS) → ECS Fargate tasks
 ```
 
-CloudFront provides:
+CloudFront provides DDoS protection (Shield Standard included), edge TLS termination, HTTP response
+caching, and WAF attachment. CloudFront has supported WebSocket proxying since 2018 — upgrade
+requests are forwarded to the origin as-is; a cache behavior for `/socket.io/*` with
+`CachingDisabled` prevents interference.
 
-- **DDoS protection** — AWS Shield Standard is included at no extra cost on every CloudFront
-  distribution. Shield Advanced (automatic application-layer mitigation) is available if SLAs
-  require it.
-- **Edge TLS termination** — ACM certificate attached to the CloudFront distribution; the ALB can
-  use a second ACM certificate for origin encryption, or use HTTP internally if the VPC is trusted.
-- **HTTP caching** — REST API responses with appropriate `Cache-Control` headers (e.g., GET
-  `/messages?room=x`) can be cached at the edge, reducing origin load.
-- **Geo-restriction and WAF** — WAF WebACL can be attached to the CloudFront distribution as an
-  alternative (or in addition) to an ALB-level WAF.
+No path-based routing split between HTTP and WebSocket is needed — uvicorn handles both on port 8000
+via `socketio_app`. `deregistration_delay` (default 300s) on the ALB target group gives existing
+WebSocket connections time to close gracefully during a rolling deploy or scale-in.
 
-CloudFront has supported WebSocket proxying since 2018. WebSocket upgrade requests
-(`Upgrade: websocket`) are forwarded to the origin as-is; CloudFront does not buffer or cache
-WebSocket frames. A dedicated CloudFront cache behavior with `Allowed HTTP Methods: GET, HEAD` and
-`Cache Policy: CachingDisabled` should be set for the WebSocket path (`/socket.io/*`) to prevent any
-cache interference.
-
-### WebSocket routing
-
-The socket.io server mounts at `/socket.io/`. The ALB listener rule routes all traffic to the single
-ECS target group (target type `ip`, port 8000). No path-based routing split is needed between HTTP
-and WebSocket — uvicorn handles both on the same port via `socketio_app` (the ASGI wrapper that
-intercepts the WebSocket upgrade before FastAPI middleware).
-
-Connection draining (`deregistration_delay` on the target group, default 300 seconds) gives existing
-WebSocket connections time to close gracefully when a task is deregistered during a rolling deploy
-or scale-in event. For a chat application, 300 seconds is a reasonable default; reduce it if deploys
-need to complete faster and the client reconnects cleanly.
-
-### Custom domain
-
-Route 53 → CloudFront alias record (`A` + `AAAA`). The CloudFront distribution uses an ACM
-certificate in `us-east-1` (required for CloudFront regardless of the origin region). The ALB uses a
-regional ACM certificate. Both are provisioned separately from Terraform because ACM DNS validation
-requires a hosted zone ID that is account-specific.
+Custom domain: Route 53 → CloudFront alias record. CloudFront uses an ACM certificate in `us-east-1`
+(required for CloudFront regardless of origin region); ALB uses a regional ACM certificate.
 
 ______________________________________________________________________
 
-## Auto scaling and load testing
+### Auto scaling and load testing
 
-### ECS target tracking policies
+Two ECS target tracking policies:
 
-Two auto-scaling policies are wired in the ECS module:
+- **CPU utilization, target 70%** — handles compute-bound load. 70% leaves headroom for traffic
+  spikes before the next task comes online (60–90s Fargate cold start).
+- **ALBRequestCountPerTarget, target 1,000** — handles high-connection, low-CPU WebSocket load.
+  Without this, CPU-based scaling under-provisions during periods of many open connections.
 
-- **CPU utilization — target 70%.** Handles compute-bound load (request parsing, DB queries,
-  business logic). At 70% the scaler has headroom to absorb a traffic spike before the next task
-  comes online (typically 60–90 seconds for ECS Fargate cold start).
-- **ALBRequestCountPerTarget — target 1,000.** Handles I/O-bound load typical of WebSocket
-  workloads: each connected socket counts as an open request from the ALB's perspective but consumes
-  little CPU. Without a request-count policy, CPU-based scaling would under-provision during
-  high-connection, low-CPU periods.
+Targets are starting points to be validated against load test results. [Locust](https://locust.io)
+is the recommended tool — Python-based, scriptable for both HTTP and WebSocket via
+`locust-plugins SocketIoUser`. Baseline scenarios: (1) HTTP ramp to find single-task CPU ceiling,
+(2) WebSocket connection flood to validate request-count scaling, (3) mixed load.
 
-The targets (70% CPU, 1,000 requests) are starting points. They should be validated and tuned after
-a load test baseline is established.
-
-### Locust baseline approach
-
-[Locust](https://locust.io) is the recommended load testing tool: Python-based, scriptable, and
-capable of testing both HTTP endpoints and WebSocket connections via the
-[locust-plugins](https://github.com/SvAnd/locust-plugins) `SocketIoUser` class.
-
-Baseline load test scenarios:
-
-1. **Ramp HTTP endpoints** — Gradually increase concurrent users hitting `GET /ready`,
-   `GET /health/`, and any REST endpoints. Identify the request rate at which CPU hits 70% on a
-   single task. Validate that ECS scales out before p99 latency degrades.
-1. **WebSocket connection flood** — Open a large number of persistent socket.io connections, send
-   periodic `message` events, and verify that the ALBRequestCountPerTarget policy scales out
-   correctly without CPU climbing.
-1. **Mixed load** — HTTP + WebSocket simultaneously, simulating real usage.
-
-Locust results feed directly into scaling policy target refinement. Run load tests against the
-staging environment (RDS enabled, same task sizing as prod) before setting prod tfvars.
-
-### Scale-in conservatism
-
-The default scale-in cooldown (300 seconds) is intentionally conservative for a chat workload.
-Scaling in too aggressively terminates tasks that still hold open WebSocket connections, forcing
-client reconnects and causing a visible disruption. The `deregistration_delay` on the ALB target
-group governs how long ECS waits for connections to drain before terminating a task; both parameters
-should be tuned together.
+Scale-in conservatism: the default 300s cooldown is intentional for a chat workload. Aggressive
+scale-in terminates tasks still holding open WebSocket connections. `deregistration_delay` and
+scale-in cooldown should be tuned together.
 
 ______________________________________________________________________
 
-## Cloud spend management
+### Cloud spend management
 
-### Tagging strategy
-
-Every resource created by Terraform inherits three tags via `provider.default_tags`:
+Every resource inherits three tags via `provider.default_tags`:
 
 ```hcl
 Project     = var.project      # "chatty"
@@ -839,228 +495,141 @@ Environment = var.environment  # "dev" | "staging" | "prod"
 ManagedBy   = "terraform"
 ```
 
-AWS Cost Explorer can slice spend by any tag. Enabling tag-based cost allocation in the AWS Billing
-console makes per-environment and per-project cost breakdowns available within 24 hours. The
-`ManagedBy = "terraform"` tag also makes it easy to identify unmanaged (manual or drift) resources.
+AWS Cost Explorer slices spend by tag; tag-based cost allocation is available within 24 hours of
+enabling it in the Billing console. `ManagedBy = "terraform"` also makes it easy to identify
+unmanaged (manual or drift) resources.
 
-### VPC endpoint savings
+Per-environment controls:
 
-The most significant hidden cost in Fargate deployments is NAT Gateway data processing charges
-($0.045/GB). Every ECR image pull, Secrets Manager API call, and CloudWatch Logs shipment traverses
-the NAT Gateway without VPC endpoints. The five VPC endpoints provisioned in the networking module
-(S3 Gateway, ECR API, ECR DKR, Secrets Manager, CloudWatch Logs) route AWS-internal traffic on the
-AWS backbone, bypassing the NAT Gateway entirely. Interface endpoints cost $0.01/hour + $0.01/GB —
-materially cheaper than NAT for high-frequency AWS API calls.
+- **Dev**: `single_nat_gateway = true` (~$30/month saved), `create_rds = false` (~$25–50/month
+  saved), minimum ECS task sizing.
+- **Staging**: RDS at `db.t4g.small`; single NAT.
+- **Prod**: Multi-AZ NAT and RDS — deliberate spend for HA, visible in `terraform.tfvars` for code
+  review.
 
-### Per-environment cost controls
+After 3+ months of stable usage: Compute Savings Plans (1-year, no upfront) reduce Fargate charges
+~20–30%; RDS Reserved Instances reduce instance-hours ~40%.
 
-- **Dev** — `single_nat_gateway = true` saves ~$30/month (one NAT Gateway vs one per AZ).
-  `create_rds = false` saves ~$25–50/month depending on instance class. Minimum ECS task sizing (256
-  CPU, 512 MB) minimizes Fargate compute costs.
-- **Staging** — RDS enabled at `db.t4g.small`; smaller than prod but functionally equivalent. Single
-  NAT (two AZs).
-- **Prod** — Multi-AZ NAT and Multi-AZ RDS are deliberate spend for HA. Cost is justified by the
-  SLA; the sizing is documented in `terraform.tfvars` so it is visible in code review.
-
-### Savings Plans and Reserved Instances
-
-After 3+ months of stable production usage:
-
-- **Compute Savings Plans (1-year, no upfront)** — reduce Fargate vCPU and memory charges by ~20–30%
-  vs on-demand with no commitment to specific instance families. Applies automatically across ECS
-  Fargate and Lambda.
-- **RDS Reserved Instances (1-year, no upfront)** — reduce RDS instance-hours by ~40% vs on-demand.
-  Lock in after the instance class is validated by production load.
-
-### Additional cost controls not yet in Terraform
-
-- **ECR lifecycle policy** — purge untagged images automatically. Each Docker build layer push
-  leaves untagged images that accumulate storage charges silently. A lifecycle rule
-  (`untaggedStatus = "expired"` after 1 day) keeps the repository clean.
-- **CloudWatch log retention** — log groups without a retention policy store logs indefinitely. A
-  30-day retention for dev/staging and 90-day for prod is a reasonable starting point; critical logs
-  should be exported to S3 + Glacier for long-term compliance archival at lower cost.
+Not yet in Terraform: ECR lifecycle policies (purge untagged images to avoid silent storage
+charges); CloudWatch log retention (30-day dev/staging, 90-day prod with S3/Glacier archival).
 
 ______________________________________________________________________
 
-## General SDLC
+### General SDLC
 
-### Trunk-based development
+#### Trunk-based development
 
-The repository uses trunk-based development: all work happens on short-lived feature branches
-branched from `main`, merged via PR, and deleted. No long-lived `develop` or `release` branches.
-`main` is always in a releasable state — every merge triggers CI and the smoke-test suite.
+All work on short-lived feature branches (`feat/`, `fix/`, `chore/`, `docs/`) branched from `main`,
+merged via PR, deleted. `main` is always releasable. Branches kept to a single atomic concern —
+touching more than 3–4 unrelated files is a signal to decompose.
 
-Branch naming follows a `type/short-description` convention (`feat/`, `fix/`, `chore/`, `docs/`).
-Branches are kept to a single atomic concern; if a change touches more than 3-4 unrelated files it
-is a signal to decompose it.
+PR gates — all three CI jobs must pass before merge:
 
-### PR gates
+- `ci` — pre-commit + pip-audit + unit tests
+- `terraform-security` — TFLint + Trivy IaC
+- `smoke-test` — docker build + Trivy image + docker compose + smoke tests
 
-Every PR to `main` must pass all three CI jobs before merge is permitted:
+Squash merge only — one commit per PR, linear history on `main`. Rebase keeps feature branches
+current before opening PRs.
 
-- `ci` — pre-commit (lint, typecheck, format, secrets scan), pip-audit, unit tests
-- `terraform-security` — terraform fmt, TFLint, Trivy IaC scan
-- `smoke-test` — docker build, Trivy image scan, docker compose up, smoke tests
-
-Squash merge is the only permitted merge strategy. This keeps `git log main` linear: one commit per
-PR, each referencing a single task. Rebase is used to keep feature branches current with `main`
-before opening a PR.
-
-Branch protection rules (to be enabled on the GitHub repo):
+Branch protection rules (to enable in GitHub settings):
 
 - Require status checks: `ci`, `terraform-security`, `smoke-test`
-- Require at least 1 approving review
+- Require at least 1 approving review (enforced via CODEOWNERS)
 - Dismiss stale reviews on new push
 - Restrict force-push to `main`
+- Require signed commits (SSH signing is now first-class in GitHub; no GPG toolchain needed)
 
-### Release strategy
+#### Release strategy
 
-There is no separate release branch or tagging ceremony at this stage. Every merge to `main` is a
-candidate for deployment to staging. Promotion to production is a manual trigger on the CD pipeline
-(not yet wired — see CI/CD approach section).
+Every merge to `main` is a candidate for staging deployment. Production promotion is a manual
+trigger on the CD pipeline (not yet wired). Release artifact is the Docker image tagged with the
+full git SHA — no semantic versioning, no tagging ceremony. The SHA ties a running container back to
+the exact commit that produced it.
 
-When the CD pipeline is implemented, the release artifact is the Docker image tagged with the full
-Git SHA (`git rev-parse --short HEAD`). Semantic versioning is not used; the SHA is the canonical
-identifier that ties a running container back to the exact commit that produced it.
+#### Dependency update automation
 
-### Dependency update automation
-
-Automated dependency updates are table stakes for a production service. The intended tool is
-**Renovate** rather than Dependabot: Renovate has better monorepo support, more granular
-configuration (group updates by ecosystem, schedule updates by day/time, auto-merge patch bumps),
-and produces one PR per dependency group rather than one per package.
-
-A `.renovaterc` at the repo root would configure:
-
-- Python deps (`uv` ecosystem) — weekly, auto-merge patch, manual review for minor/major
-- Terraform providers — monthly, manual review
-- Docker base image digests — weekly, auto-merge
-- GitHub Actions — weekly, auto-merge patch
-
-This is not yet implemented. Until it is, dependency updates are manual.
+**Renovate** (over Dependabot): better monorepo support, one PR per dependency group rather than one
+per package, more granular scheduling. Planned `.renovaterc` config: Python deps weekly (auto-merge
+patch, manual review for minor/major), Terraform providers monthly, Docker digests weekly
+(auto-merge), GitHub Actions weekly (auto-merge patch). Not yet implemented.
 
 ______________________________________________________________________
 
-## Full DevSecOps pipeline design
+### Full DevSecOps pipeline design
 
-The current repository implements the shift-left and artifact-scanning layers. This section
-documents the full pipeline design across all three layers: shift-left (pre-commit), CI scan gates,
-and CD gates.
+The current repository implements layers 1 and 2. This documents the complete intended design.
 
-### Layer 1: shift-left (pre-commit)
+#### Layer 1: shift-left (pre-commit)
 
-Running security checks at commit time gives the fastest feedback loop — failures surface before
-code enters a PR.
-
-Currently wired:
-
-- **ruff** — linting and formatting; catches insecure patterns (e.g. `T20` for print statements that
-  could leak sensitive data)
-- **gitleaks** — detects hardcoded secrets, API keys, and tokens in staged changes
-- **terraform fmt + TFLint** — IaC correctness before any plan is run
-
-Not yet wired, planned additions:
-
-- **checkov** — IaC policy scanning at authoring time, complementing the Trivy IaC scan in CI.
-  Catches the same class of Terraform misconfigurations earlier in the loop.
-- **Semgrep** — SAST for Python. Detects injection patterns, insecure use of `subprocess`, hardcoded
-  credentials, and other application-layer security issues. The community ruleset covers FastAPI and
-  SQLAlchemy patterns specifically.
-
-### Layer 2: CI scan gates
-
-Currently wired:
-
-- **Trivy IaC scan** (`terraform-security` job) — scans Terraform HCL for HIGH/CRITICAL
-  misconfigurations on every PR
-- **Trivy image scan** (`smoke-test` job) — scans the built container image for OS and
-  language-runtime CVEs; unfixed findings suppressed, all fixed HIGH/CRITICAL block the build
-- **pip-audit** (`ci` job) — scans Python dependencies against the PyPA and OSV advisory databases
+Currently wired: ruff, gitleaks, terraform fmt + TFLint.
 
 Planned additions:
 
-- **OWASP Dependency-Check** or **Grype** — alternative/complementary image and dependency scanner
-  with broader language support if the Python ecosystem expands
-- **OPA/Conftest** — policy-as-code for Terraform plan output. Enforces organizational policies
-  (e.g. no public S3 buckets, all resources must have required tags) that are too business-specific
-  for general-purpose scanners like Trivy or checkov
+- **Semgrep** — SAST for Python; detects injection patterns, insecure `subprocess` use, hardcoded
+  credentials. Community ruleset covers FastAPI and SQLAlchemy patterns.
+- **checkov** — IaC policy scanning at authoring time; catches the same Terraform misconfigurations
+  as the Trivy IaC CI scan, earlier in the loop.
 
-### Layer 3: CD gates (not yet implemented)
+#### Layer 2: CI scan gates
 
-Once a CD pipeline is wired (see CI/CD approach section), the following gates run before any image
-is pushed to ECR or deployed:
+Currently wired: Trivy IaC (`terraform-security` job), Trivy image scan (`smoke-test` job),
+pip-audit (`ci` job).
 
-- **Secret scan on final artifact** — a `gitleaks` or `git-secrets` scan on the image filesystem
-  before the ECR push. Catches secrets that were inadvertently baked into the image (e.g. a `.env`
-  file copied by a misconfigured COPY instruction). GitHub's native push protection covers the
-  source repository; this gate covers the built artifact.
-- **Image signing with cosign** — after the ECR push, the image digest is signed with a
-  Sigstore/cosign key. ECS task definitions pin to the digest, not the tag, and a policy verifies
-  the signature before allowing deployment. This prevents tag mutation attacks and provides a
-  verifiable chain of custody from source commit to running container.
+Planned additions:
+
+- **OPA/Conftest** — policy-as-code for Terraform plan output; enforces organization-specific
+  policies (no public S3 buckets, required tags on all resources) too business-specific for
+  general-purpose scanners.
+
+#### Layer 3: CD gates (not yet implemented)
+
+- **Secret scan on final artifact** — gitleaks on the image filesystem before ECR push. GitHub's
+  native push protection covers the source repository; this gate covers the built artifact.
+- **Image signing with cosign** — after ECR push, the image digest is signed with a Sigstore/cosign
+  key. ECS task definitions pin to the digest; a policy verifies the signature before allowing
+  deployment. Prevents tag mutation attacks; provides a verifiable chain of custody from source
+  commit to running container.
 - **Sentinel/OPA policy enforcement** — if using HCP Terraform, Sentinel policies run against the
   Terraform plan before apply, enforcing cost controls and compliance requirements that cannot be
   expressed as resource-level checks.
 
-### Supply chain integrity
+#### Supply chain integrity
 
-Beyond scanning artifacts for known vulnerabilities, a mature pipeline protects the pipeline itself:
+- **GHA steps pinned to commit SHAs** — already implemented. Mutable version tags are a supply chain
+  risk; SHA pinning eliminates the vector. Renovate handles SHA bump PRs automatically when wired.
+- **Minimal `GITHUB_TOKEN` permissions** — the workflow has no `permissions:` block (broad default
+  scope). Adding `permissions: contents: read` at the top level and granting only what each job
+  needs (e.g. `id-token: write` only for the ECR push job) limits blast radius. Planned as part of
+  CD wiring.
+- **SBOM generation** — Trivy can output a CycloneDX or SPDX Software Bill of Materials from the
+  container image. One additional `trivy image --format cyclonedx` step; increasingly expected for
+  compliance with US Executive Order 14028 and the EU Cyber Resilience Act.
+- **Commit signing** — requiring GPG or SSH-signed commits via branch protection ensures every
+  commit on `main` is cryptographically attributed to a known key. A GitHub repository settings
+  change, documented here as a required hardening step before production launch.
+- **SLSA provenance** — current build is roughly SLSA Level 1 (scripted, repeatable). Level 2 adds a
+  signed provenance attestation via `slsa-github-generator`, establishing a verifiable link from
+  source commit to container image digest. Targeting Level 2 as part of the CD pipeline.
 
-**GitHub Actions pinned to commit SHAs.** The current workflow uses version tags
-(`actions/checkout@v4`, `astral-sh/setup-uv@v4`, etc.). Tags are mutable — if an upstream action
-repository is compromised and a tag is moved, the next CI run executes attacker-controlled code with
-full access to repository secrets and the `GITHUB_TOKEN`. Pinning every `uses:` to the full commit
-SHA eliminates this vector. When Renovate is wired it handles SHA bump PRs automatically. This is
-not yet done and is a planned implementation task.
+#### Severity posture
 
-**Minimal `GITHUB_TOKEN` permissions.** The workflow has no `permissions:` block, so jobs run with
-the default token scope (broad read/write on most repository resources). Adding a top-level
-`permissions: contents: read` and granting only what each job needs (e.g. `id-token: write` only for
-the job that pushes to ECR) limits blast radius if a step is compromised. Planned as part of the CD
-pipeline wiring.
-
-**SBOM generation.** Trivy can output a CycloneDX or SPDX Software Bill of Materials from the
-container image. Attaching the SBOM as a CI artifact (or to GitHub releases) is increasingly
-expected for compliance with US Executive Order 14028 and the EU Cyber Resilience Act. Low
-implementation cost — one additional `trivy image --format cyclonedx` step. Planned for the CD
-pipeline.
-
-**Commit signing.** Requiring GPG or SSH-signed commits via branch protection ensures every commit
-on `main` is cryptographically attributed to a known key, not just a GitHub username. SSH signing is
-now first-class in GitHub and requires no GPG toolchain. The branch protection rule is
-`Require signed commits`. This is a GitHub repository settings change, not a Terraform or code
-change, but is documented here as a required hardening step before production launch.
-
-**SLSA provenance.** The current build is roughly SLSA Level 1 (scripted, repeatable build). Level 2
-adds a signed provenance attestation generated by the hosted build service (`slsa-github-generator`
-GitHub Action), establishing a verifiable link from source commit to container image digest. Level 3
-adds an isolated, ephemeral build environment. Targeting Level 2 via `slsa-github-generator` is
-planned as part of the CD pipeline.
-
-### Severity posture
-
-The current posture is HIGH and CRITICAL findings block the build; MEDIUM and below are reported but
-do not fail. This is intentional: blocking on MEDIUM in a greenfield project generates too much
-noise from unfixed upstream vulnerabilities that have no available remediation. The threshold should
-be reviewed as the project matures and dependency hygiene improves.
+HIGH and CRITICAL findings block the build; MEDIUM and below are reported but do not fail. Blocking
+on MEDIUM in a greenfield project generates noise from unfixed upstream vulnerabilities with no
+available remediation. The threshold should be reviewed as the project matures.
 
 ______________________________________________________________________
 
-## OpenTelemetry tracing approach
+### OpenTelemetry tracing approach
 
-### Why not implement now
+#### Why not implement now
 
-Distributed tracing via OTel is layer two of observability — structured logging (already wired via
-structlog) is layer one. Implementing OTel correctly requires an OTel collector, a configured
-exporter, and somewhere for traces to land (Jaeger, Tempo, X-Ray, or an OTLP-compatible backend). A
-half-wired OTel setup with no collector and no backend produces no value and adds maintenance
-overhead. The decision is to document the approach and implement it when the CD pipeline and
-observability backend are chosen.
+Distributed tracing is observability layer two — structured logging (structlog, already wired) is
+layer one. A half-wired OTel setup with no collector and no backend produces no value and adds
+maintenance overhead. The decision is to document the approach and implement it when the CD pipeline
+and observability backend are chosen.
 
-### Instrumentation
-
-The FastAPI app would be instrumented with the OpenTelemetry Python SDK:
+#### Instrumentation
 
 ```python
 # app/src/chatty/core/telemetry.py
@@ -1076,49 +645,24 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 def configure_tracing(app, engine, service_name: str) -> None:
     resource = Resource.create({"service.name": service_name})
     provider = TracerProvider(resource=resource)
-    provider.add_span_processor(
-        BatchSpanProcessor(OTLPSpanExporter())  # OTLP_ENDPOINT from env
-    )
+    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(provider)
     FastAPIInstrumentor.instrument_app(app)
     SQLAlchemyInstrumentor().instrument(engine=engine)
 ```
 
-Called once in the `lifespan` context manager, this auto-instruments all FastAPI routes and
-SQLAlchemy queries with no per-endpoint changes. SocketIO events would require manual span creation
-via `tracer.start_as_current_span()` since `python-socketio` has no OTel instrumentation package.
+Called once in the lifespan context manager — auto-instruments all FastAPI routes and SQLAlchemy
+queries. SocketIO events require manual span creation via `tracer.start_as_current_span()` (no OTel
+instrumentation package exists for python-socketio).
 
-### OTLP exporter and collector sidecar
+#### OTLP and collector
 
-The exporter sends spans to an OTLP endpoint via gRPC (port 4317). In local development, an OTel
-Collector runs as an additional service in `docker-compose.yml`:
+The exporter sends spans via gRPC (port 4317). In local development, an OTel Collector runs as an
+additional docker-compose service. In production on ECS, the collector runs as a sidecar in the same
+task definition (sharing the task's network namespace); the app sets `OTLP_ENDPOINT=localhost:4317`.
 
-```yaml
-otel-collector:
-  image: otel/opentelemetry-collector-contrib:0.120.0
-  ports:
-    - "4317:4317"
-  volumes:
-    - ./otel-collector-config.yaml:/etc/otel/config.yaml
-  command: ["--config=/etc/otel/config.yaml"]
-```
-
-In production on ECS, the collector runs as a sidecar container in the same task definition, sharing
-the task's network namespace. The app container sets `OTLP_ENDPOINT=localhost:4317`; the collector
-is configured to export to AWS X-Ray, Grafana Tempo, or whichever backend is chosen.
-
-### Trace propagation with the front end
-
-The ALB passes `X-Amzn-Trace-Id` headers on all requests. The OTel SDK can be configured to extract
-this as the parent span context, linking front-end and back-end traces into a single distributed
-trace across the CloudFront → ALB → ECS path.
-
-### What is not yet wired
-
-- No OTel dependencies in `pyproject.toml`
-- No collector service in `docker-compose.yml`
-- No `configure_tracing` call in `lifespan`
-- No observability backend selected or provisioned in Terraform
+The ALB passes `X-Amzn-Trace-Id` headers on all requests. The OTel SDK extracts this as the parent
+span context, linking front-end and back-end traces across the CloudFront → ALB → ECS path.
 
 ______________________________________________________________________
 
@@ -1126,6 +670,7 @@ ______________________________________________________________________
 
 This project uses Claude Code (claude-sonnet-4-6) as a pair-programming assistant throughout the
 operationalization work. All code changes are reviewed and approved by the engineer before commit.
+
 Claude is used to:
 
 - Draft and refine implementation within task scope
