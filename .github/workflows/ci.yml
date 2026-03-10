@@ -35,3 +35,37 @@ jobs:
       - name: Run tests
         working-directory: app
         run: uv run pytest -W ignore
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    needs: ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python and uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.11"
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.UV_CACHE_DIR }}
+          key: uv-${{ runner.os }}-${{ hashFiles('app/uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+
+      - name: Install dependencies
+        working-directory: app
+        run: uv sync
+
+      - name: Build and start stack
+        run: docker compose up -d --wait
+
+      - name: Run smoke tests
+        working-directory: app
+        run: uv run pytest tests_smoke/ -v -W ignore
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose down -v

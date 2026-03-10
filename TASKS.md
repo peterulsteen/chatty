@@ -14,11 +14,12 @@ Living document. Check off on merge to main.
 - [x] /ready readiness endpoint (do not touch existing /health/)
 - [x] Add request_id to existing logging middleware
 - [x] Multi-stage Dockerfile (CMD: chatty.main:socketio_app)
+- [x] docker-compose.yml (app + Postgres service, DATABASE_URL wired via env)
+- [x] Alembic skeleton (migration infrastructure — env.py, versions/, not a schema migration)
+- [x] Smoke tests in CI (docker compose up --wait + pytest tests_smoke/)
 
 ## Implement
 
-- [ ] docker-compose.yml (app + Postgres service, DATABASE_URL wired via env)
-- [ ] Alembic skeleton (migration infrastructure — env.py, versions/, not a schema migration)
 - [ ] Terraform skeleton (VPC + ECS + RDS resource graph demonstrating dependency order)
 - [ ] Justfile (dev, test, build, up, down — no lint/typecheck, pre-commit owns those)
 

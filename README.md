@@ -28,12 +28,19 @@ uv run python run.py
 cd app
 uv run pytest -W ignore
 
-# Basic RestAPI smoke test with server running locally
-uv run pytest tests_smoke/smoke_test.py
+# Smoke tests — require a running server and database
+# Easiest: use docker compose (spins up the full stack)
+docker compose up -d --wait
+cd app && uv run pytest tests_smoke/ -v -W ignore
+docker compose down -v
 
-# Basic SocketIO smoke test with server running locally
+# Or run against a server already running locally
+cd app
+uv run pytest tests_smoke/smoke_test.py
 uv run pytest tests_smoke/smoke_socketio.py
 ```
+
+Smoke tests also run automatically in CI as a separate `smoke-test` job after unit tests pass.
 
 ## To Do / To Discuss
 

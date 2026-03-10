@@ -272,6 +272,51 @@ implemented; not a gap worth discussing in the interview.
 
 ______________________________________________________________________
 
+## Alembic skeleton
+
+### Alembic as dev dependency
+
+Alembic is a dev dependency at this stage because migrations are run as a deployment step, not
+inside the app container. In production the CD pipeline runs `alembic upgrade head` against the
+database before the ECS service update rolls — this can be done from a separate migration task
+definition or a one-off ECS task using the same image with alembic installed. If a single image
+needs to serve both roles, alembic moves to production dependencies.
+
+### sqlalchemy.url intentionally absent from alembic.ini
+
+Credentials must never live in a config file committed to version control. `env.py` reads
+`DATABASE_URL` from `settings` (pydantic-settings), which sources it from the environment. The
+`alembic.ini` has a comment marking the absence as intentional, not accidental.
+
+### Baseline migration
+
+`0001_baseline.py` is an empty migration — no schema changes. Its purpose is to establish a
+migration history starting point so that future `alembic revision --autogenerate` migrations have a
+parent revision and `alembic upgrade head` has somewhere to start from. The existing tables are
+currently created by `Base.metadata.create_all()` at app startup; the migration history will take
+over schema ownership once the first real schema migration is written.
+
+______________________________________________________________________
+
+## Smoke tests in CI
+
+Smoke tests exercise the full running stack — HTTP endpoints and SocketIO — against a live server
+with a real Postgres database. They live in `app/tests_smoke/` and were previously run manually
+only.
+
+A dedicated `smoke-test` job was added to `ci.yml` that runs after the `ci` job (pre-commit + unit
+tests) passes. It uses `docker compose up -d --wait`, which blocks until both `db` and `app`
+healthchecks pass before handing off to pytest. The app healthcheck polls `/health/ready`, which
+already performs a live DB query — so a passing healthcheck means the full stack is wired correctly
+before a single smoke test runs.
+
+The job tears down with `docker compose down -v` (always, even on failure) to keep runners clean.
+
+Sequencing `smoke-test` after `ci` avoids burning Docker build time when linting or unit tests are
+already failing.
+
+______________________________________________________________________
+
 ## AI Use
 
 This project uses Claude Code (claude-sonnet-4-6) as a pair-programming assistant throughout the
