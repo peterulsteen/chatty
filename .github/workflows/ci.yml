@@ -37,6 +37,10 @@ jobs:
       - name: Run pre-commit
         run: uv --project app run pre-commit run --all-files
 
+      - name: Audit dependencies
+        working-directory: app
+        run: uv run pip-audit
+
       - name: Run tests
         working-directory: app
         run: uv run pytest -W ignore
