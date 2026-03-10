@@ -118,6 +118,8 @@ jobs:
           image-ref: chatty:latest
           exit-code: "1"
           severity: HIGH,CRITICAL
+          # Suppress findings with no fix yet (OS packages awaiting upstream patch).
+          ignore-unfixed: true
 
       - name: Start stack
         run: docker compose up -d --wait

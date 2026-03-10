@@ -21,12 +21,20 @@ FROM python:3.11-slim AS final
 
 RUN useradd --uid 1001 --no-create-home --shell /sbin/nologin appuser
 
+# Remove build tools not needed at runtime. The app runs from the uv-built
+# .venv copied below; system pip/setuptools/wheel serve no purpose in the
+# final image and carry known CVEs.
+RUN python -m pip uninstall -y pip setuptools wheel
+
 COPY --from=builder /app/.venv /app/.venv
 COPY app/src/ /app/src/
-COPY app/run.py /app/
 
 ENV PYTHONPATH="/app/src" \
-    PATH="/app/.venv/bin:$PATH"
+    PATH="/app/.venv/bin:$PATH" \
+    # Bytecode is compiled at build time via UV_COMPILE_BYTECODE; prevent runtime writes.
+    PYTHONDONTWRITEBYTECODE=1 \
+    # Flush stdout/stderr immediately so structured logs reach the log driver without buffering.
+    PYTHONUNBUFFERED=1
 
 WORKDIR /app
 USER appuser
