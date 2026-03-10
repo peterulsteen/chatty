@@ -24,7 +24,7 @@ Living document. Check off on merge to main.
 - [x] Justfile (dev, test, build, up, down — no lint/typecheck, pre-commit owns those)
 - [x] `pip-audit` in CI — dependency vulnerability scan against PyPI advisory database
 - [x] `trivy` image scan in CI — container CVE scan after docker build (distinct from IaC scan)
-- [ ] `.github/PULL_REQUEST_TEMPLATE.md`
+- [x] `.github/PULL_REQUEST_TEMPLATE.md`
 
 ## Document only (RATIONALE.md)
 
