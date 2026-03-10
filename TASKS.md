@@ -40,7 +40,7 @@ Living document. Check off on merge to main.
 - [x] Full DevSecOps pipeline design — shift-left layers (pre-commit), CI scan gates (Trivy,
   pip-audit, checkov), CD gates (secret scanning before ECR push), policy enforcement
   (OPA/Sentinel), image signing (cosign)
-- [ ] OpenTelemetry tracing approach — instrumentation design, OTLP exporter, collector sidecar
+- [x] OpenTelemetry tracing approach — instrumentation design, OTLP exporter, collector sidecar
 - [x] Commit signing — require signed commits; document branch protection rule in General SDLC
 
 ## Final pass
