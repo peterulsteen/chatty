@@ -942,6 +942,111 @@ This is not yet implemented. Until it is, dependency updates are manual.
 
 ______________________________________________________________________
 
+## Full DevSecOps pipeline design
+
+The current repository implements the shift-left and artifact-scanning layers. This section
+documents the full pipeline design across all three layers: shift-left (pre-commit), CI scan gates,
+and CD gates.
+
+### Layer 1: shift-left (pre-commit)
+
+Running security checks at commit time gives the fastest feedback loop — failures surface before
+code enters a PR.
+
+Currently wired:
+
+- **ruff** — linting and formatting; catches insecure patterns (e.g. `T20` for print statements that
+  could leak sensitive data)
+- **gitleaks** — detects hardcoded secrets, API keys, and tokens in staged changes
+- **terraform fmt + TFLint** — IaC correctness before any plan is run
+
+Not yet wired, planned additions:
+
+- **checkov** — IaC policy scanning at authoring time, complementing the Trivy IaC scan in CI.
+  Catches the same class of Terraform misconfigurations earlier in the loop.
+- **Semgrep** — SAST for Python. Detects injection patterns, insecure use of `subprocess`, hardcoded
+  credentials, and other application-layer security issues. The community ruleset covers FastAPI and
+  SQLAlchemy patterns specifically.
+
+### Layer 2: CI scan gates
+
+Currently wired:
+
+- **Trivy IaC scan** (`terraform-security` job) — scans Terraform HCL for HIGH/CRITICAL
+  misconfigurations on every PR
+- **Trivy image scan** (`smoke-test` job) — scans the built container image for OS and
+  language-runtime CVEs; unfixed findings suppressed, all fixed HIGH/CRITICAL block the build
+- **pip-audit** (`ci` job) — scans Python dependencies against the PyPA and OSV advisory databases
+
+Planned additions:
+
+- **OWASP Dependency-Check** or **Grype** — alternative/complementary image and dependency scanner
+  with broader language support if the Python ecosystem expands
+- **OPA/Conftest** — policy-as-code for Terraform plan output. Enforces organizational policies
+  (e.g. no public S3 buckets, all resources must have required tags) that are too business-specific
+  for general-purpose scanners like Trivy or checkov
+
+### Layer 3: CD gates (not yet implemented)
+
+Once a CD pipeline is wired (see CI/CD approach section), the following gates run before any image
+is pushed to ECR or deployed:
+
+- **Secret scan on final artifact** — a `gitleaks` or `git-secrets` scan on the image filesystem
+  before the ECR push. Catches secrets that were inadvertently baked into the image (e.g. a `.env`
+  file copied by a misconfigured COPY instruction). GitHub's native push protection covers the
+  source repository; this gate covers the built artifact.
+- **Image signing with cosign** — after the ECR push, the image digest is signed with a
+  Sigstore/cosign key. ECS task definitions pin to the digest, not the tag, and a policy verifies
+  the signature before allowing deployment. This prevents tag mutation attacks and provides a
+  verifiable chain of custody from source commit to running container.
+- **Sentinel/OPA policy enforcement** — if using HCP Terraform, Sentinel policies run against the
+  Terraform plan before apply, enforcing cost controls and compliance requirements that cannot be
+  expressed as resource-level checks.
+
+### Supply chain integrity
+
+Beyond scanning artifacts for known vulnerabilities, a mature pipeline protects the pipeline itself:
+
+**GitHub Actions pinned to commit SHAs.** The current workflow uses version tags
+(`actions/checkout@v4`, `astral-sh/setup-uv@v4`, etc.). Tags are mutable — if an upstream action
+repository is compromised and a tag is moved, the next CI run executes attacker-controlled code with
+full access to repository secrets and the `GITHUB_TOKEN`. Pinning every `uses:` to the full commit
+SHA eliminates this vector. When Renovate is wired it handles SHA bump PRs automatically. This is
+not yet done and is a planned implementation task.
+
+**Minimal `GITHUB_TOKEN` permissions.** The workflow has no `permissions:` block, so jobs run with
+the default token scope (broad read/write on most repository resources). Adding a top-level
+`permissions: contents: read` and granting only what each job needs (e.g. `id-token: write` only for
+the job that pushes to ECR) limits blast radius if a step is compromised. Planned as part of the CD
+pipeline wiring.
+
+**SBOM generation.** Trivy can output a CycloneDX or SPDX Software Bill of Materials from the
+container image. Attaching the SBOM as a CI artifact (or to GitHub releases) is increasingly
+expected for compliance with US Executive Order 14028 and the EU Cyber Resilience Act. Low
+implementation cost — one additional `trivy image --format cyclonedx` step. Planned for the CD
+pipeline.
+
+**Commit signing.** Requiring GPG or SSH-signed commits via branch protection ensures every commit
+on `main` is cryptographically attributed to a known key, not just a GitHub username. SSH signing is
+now first-class in GitHub and requires no GPG toolchain. The branch protection rule is
+`Require signed commits`. This is a GitHub repository settings change, not a Terraform or code
+change, but is documented here as a required hardening step before production launch.
+
+**SLSA provenance.** The current build is roughly SLSA Level 1 (scripted, repeatable build). Level 2
+adds a signed provenance attestation generated by the hosted build service (`slsa-github-generator`
+GitHub Action), establishing a verifiable link from source commit to container image digest. Level 3
+adds an isolated, ephemeral build environment. Targeting Level 2 via `slsa-github-generator` is
+planned as part of the CD pipeline.
+
+### Severity posture
+
+The current posture is HIGH and CRITICAL findings block the build; MEDIUM and below are reported but
+do not fail. This is intentional: blocking on MEDIUM in a greenfield project generates too much
+noise from unfixed upstream vulnerabilities that have no available remediation. The threshold should
+be reviewed as the project matures and dependency hygiene improves.
+
+______________________________________________________________________
+
 ## AI Use
 
 This project uses Claude Code (claude-sonnet-4-6) as a pair-programming assistant throughout the

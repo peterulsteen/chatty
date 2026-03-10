@@ -25,6 +25,9 @@ Living document. Check off on merge to main.
 - [x] `pip-audit` in CI — dependency vulnerability scan against PyPI advisory database
 - [x] `trivy` image scan in CI — container CVE scan after docker build (distinct from IaC scan)
 - [x] `.github/PULL_REQUEST_TEMPLATE.md`
+- [ ] `.github/CODEOWNERS` — require review from specific owners for specific paths
+- [ ] Pin GitHub Actions steps to commit SHAs — supply chain hardening (currently using mutable
+  version tags)
 
 ## Document only (RATIONALE.md)
 
@@ -34,10 +37,11 @@ Living document. Check off on merge to main.
 - [x] Auto scaling + load testing — ECS target tracking, Locust baseline approach
 - [x] Cloud spend management — tagging strategy, Savings Plans, VPC endpoint savings
 - [x] General SDLC — trunk-based dev, PR gates, release strategy, Renovate for dependency updates
-- [ ] Full DevSecOps pipeline design — shift-left layers (pre-commit), CI scan gates (Trivy,
+- [x] Full DevSecOps pipeline design — shift-left layers (pre-commit), CI scan gates (Trivy,
   pip-audit, checkov), CD gates (secret scanning before ECR push), policy enforcement
   (OPA/Sentinel), image signing (cosign)
 - [ ] OpenTelemetry tracing approach — instrumentation design, OTLP exporter, collector sidecar
+- [x] Commit signing — require signed commits; document branch protection rule in General SDLC
 
 ## Final pass
 
