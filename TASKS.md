@@ -26,7 +26,7 @@ Living document. Check off on merge to main.
 - [x] `trivy` image scan in CI — container CVE scan after docker build (distinct from IaC scan)
 - [x] `.github/PULL_REQUEST_TEMPLATE.md`
 - [x] `.github/CODEOWNERS` — require review from specific owners for specific paths
-- [ ] Pin GitHub Actions steps to commit SHAs — supply chain hardening (currently using mutable
+- [x] Pin GitHub Actions steps to commit SHAs — supply chain hardening (currently using mutable
   version tags)
 
 ## Document only (RATIONALE.md)
