@@ -15,6 +15,7 @@ services:
 
   app:
     build: .
+    image: chatty:latest
     ports:
       - "8000:8000"
     environment:
