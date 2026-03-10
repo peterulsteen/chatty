@@ -1,0 +1,4 @@
+# Global owner — all files require review from @peterulsteen.
+# More granular rules can be added below as the team grows; later entries
+# override earlier ones for matching paths.
+* @peterulsteen
