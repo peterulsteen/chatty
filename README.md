@@ -24,6 +24,20 @@ uv run python run.py
 # http://localhost:8000/docs
 ```
 
+## Task runner (optional)
+
+If you have [`just`](https://github.com/casey/just) installed, common commands are available as
+short aliases. `just` is purely a quality-of-life helper — every recipe is a thin wrapper around the
+same `uv` and `docker` commands documented below.
+
+```bash
+just dev    # uv run python run.py (hot reload)
+just test   # uv run pytest -W ignore
+just build  # docker build -t chatty:latest .
+just up     # docker compose up -d --wait
+just down   # docker compose down -v
+```
+
 ## Testing
 
 ```bash

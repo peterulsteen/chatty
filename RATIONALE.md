@@ -516,6 +516,21 @@ region-agnostic. Active-passive failover would require a second environment dire
 failover policy. Out of scope for a chat backend at this maturity; worth noting before a contractual
 SLA is signed.
 
+## Justfile
+
+### just as the task runner
+
+`just` is a command runner (not a build system) — no implicit dependency tracking, no DAG, no
+stale-file logic. That makes it predictable: `just dev` always runs dev, `just test` always runs
+tests. Makefiles carry GNU Make semantics (targets as files, phony declarations, tab-sensitive
+syntax) that add complexity for no benefit in a Python project.
+
+Recipes defined: `dev` (hot-reload via `run.py`), `test` (`pytest -W ignore`), `build` (docker image
+tagged `chatty:latest`), `up` (`docker compose up -d --wait`), `down` (`docker compose down -v`).
+
+No `lint` or `typecheck` recipes — pre-commit is the single source of truth for those. Running them
+through `just` would duplicate invocation paths and risk drift between local and CI behavior.
+
 ______________________________________________________________________
 
 ______________________________________________________________________
