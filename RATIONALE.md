@@ -533,6 +533,23 @@ through `just` would duplicate invocation paths and risk drift between local and
 
 ______________________________________________________________________
 
+## pip-audit
+
+### Dependency vulnerability scanning in CI
+
+`pip-audit` checks all installed packages against the Python Packaging Advisory Database (PyPA) and
+OSV. It runs in the `ci` job after `uv sync`, before tests — a failed audit means a known CVE in the
+dependency tree, which should block the build.
+
+Pre-commit is not the right layer for this: `pip-audit` makes network calls to query advisory
+databases and operates on the resolved dependency graph, not source files. Running it in CI keeps
+the pre-commit hook list fast and offline-capable.
+
+`pip-audit` is added as a dev dependency so it is pinned in `uv.lock` and the CI environment matches
+local invocations exactly.
+
+______________________________________________________________________
+
 ______________________________________________________________________
 
 ## Design decisions (not yet implemented in code)
