@@ -12,12 +12,16 @@ locals {
   name_prefix = "${var.project}-${var.environment}"
 }
 
+# trivy:ignore:AVD-AWS-0053 -- ALB is intentionally internet-facing; this is a public API + WebSocket service.
 resource "aws_lb" "main" {
   name               = "${local.name_prefix}-alb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [var.security_group_id]
   subnets            = var.public_subnet_ids
+
+  # Drop requests with invalid HTTP headers — prevents header smuggling attacks.
+  drop_invalid_header_fields = true
 
   # Prevent accidental Terraform deletion in prod.
   enable_deletion_protection = var.environment == "prod"

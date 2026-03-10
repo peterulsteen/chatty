@@ -42,11 +42,13 @@ resource "aws_internet_gateway" "main" {
 # ── Subnets — 3-tier ──────────────────────────────────────────────────────────
 
 resource "aws_subnet" "public" {
-  count                   = local.az_count
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.public_subnet_cidrs[count.index]
-  availability_zone       = var.availability_zones[count.index]
-  map_public_ip_on_launch = true
+  count             = local.az_count
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = var.public_subnet_cidrs[count.index]
+  availability_zone = var.availability_zones[count.index]
+  # ALBs manage their own network interfaces; NAT GW EIPs are allocated explicitly via
+  # aws_eip. No resources in the public tier use this attribute, so false is correct.
+  map_public_ip_on_launch = false
 
   tags = {
     Name = "${local.name_prefix}-public-${var.availability_zones[count.index]}"
@@ -221,6 +223,7 @@ resource "aws_security_group" "alb" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
+  # trivy:ignore:AVD-AWS-0104 -- ALB must send responses to any client IP on the internet.
   egress {
     from_port   = 0
     to_port     = 0
@@ -241,6 +244,7 @@ resource "aws_security_group" "app" {
     protocol        = "tcp"
     security_groups = [aws_security_group.alb.id]
   }
+  # trivy:ignore:AVD-AWS-0104 -- Tasks need outbound access for non-VPC-endpoint destinations.
   egress {
     from_port   = 0
     to_port     = 0
