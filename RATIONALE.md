@@ -1047,6 +1047,81 @@ be reviewed as the project matures and dependency hygiene improves.
 
 ______________________________________________________________________
 
+## OpenTelemetry tracing approach
+
+### Why not implement now
+
+Distributed tracing via OTel is layer two of observability — structured logging (already wired via
+structlog) is layer one. Implementing OTel correctly requires an OTel collector, a configured
+exporter, and somewhere for traces to land (Jaeger, Tempo, X-Ray, or an OTLP-compatible backend). A
+half-wired OTel setup with no collector and no backend produces no value and adds maintenance
+overhead. The decision is to document the approach and implement it when the CD pipeline and
+observability backend are chosen.
+
+### Instrumentation
+
+The FastAPI app would be instrumented with the OpenTelemetry Python SDK:
+
+```python
+# app/src/chatty/core/telemetry.py
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+
+def configure_tracing(app, engine, service_name: str) -> None:
+    resource = Resource.create({"service.name": service_name})
+    provider = TracerProvider(resource=resource)
+    provider.add_span_processor(
+        BatchSpanProcessor(OTLPSpanExporter())  # OTLP_ENDPOINT from env
+    )
+    trace.set_tracer_provider(provider)
+    FastAPIInstrumentor.instrument_app(app)
+    SQLAlchemyInstrumentor().instrument(engine=engine)
+```
+
+Called once in the `lifespan` context manager, this auto-instruments all FastAPI routes and
+SQLAlchemy queries with no per-endpoint changes. SocketIO events would require manual span creation
+via `tracer.start_as_current_span()` since `python-socketio` has no OTel instrumentation package.
+
+### OTLP exporter and collector sidecar
+
+The exporter sends spans to an OTLP endpoint via gRPC (port 4317). In local development, an OTel
+Collector runs as an additional service in `docker-compose.yml`:
+
+```yaml
+otel-collector:
+  image: otel/opentelemetry-collector-contrib:0.120.0
+  ports:
+    - "4317:4317"
+  volumes:
+    - ./otel-collector-config.yaml:/etc/otel/config.yaml
+  command: ["--config=/etc/otel/config.yaml"]
+```
+
+In production on ECS, the collector runs as a sidecar container in the same task definition, sharing
+the task's network namespace. The app container sets `OTLP_ENDPOINT=localhost:4317`; the collector
+is configured to export to AWS X-Ray, Grafana Tempo, or whichever backend is chosen.
+
+### Trace propagation with the front end
+
+The ALB passes `X-Amzn-Trace-Id` headers on all requests. The OTel SDK can be configured to extract
+this as the parent span context, linking front-end and back-end traces into a single distributed
+trace across the CloudFront → ALB → ECS path.
+
+### What is not yet wired
+
+- No OTel dependencies in `pyproject.toml`
+- No collector service in `docker-compose.yml`
+- No `configure_tracing` call in `lifespan`
+- No observability backend selected or provisioned in Terraform
+
+______________________________________________________________________
+
 ## AI Use
 
 This project uses Claude Code (claude-sonnet-4-6) as a pair-programming assistant throughout the
